@@ -9,42 +9,51 @@ struct ToolbarView: View {
     var body: some View {
         VStack(spacing: 16) {
             colorSwatch
-            sizeSwatch
 
-            Rectangle()
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 30, height: 1)
+            if !coordinator.isSidebarCollapsed {
+                Group {
+                    sizeSwatch
 
-            toolButton(.pen, systemName: "pencil.tip")
-            toolButton(.highlighter, systemName: "paintbrush.pointed.fill")
-            shapeButton
-            toolButton(.spotlight, systemName: "flashlight.on.fill")
-            toolButton(.text, systemName: "textformat")
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 30, height: 1)
 
-            Rectangle()
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 30, height: 1)
+                    toolButton(.pen, systemName: "pencil.tip")
+                    toolButton(.highlighter, systemName: "paintbrush.pointed.fill")
+                    shapeButton
+                    toolButton(.spotlight, systemName: "flashlight.on.fill")
+                    toolButton(.text, systemName: "textformat")
 
-            Button {
-                coordinator.beginRegionScreenshotSelection()
-            } label: {
-                iconLabel(systemName: "camera.fill", selected: coordinator.isSelectingRegion)
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 30, height: 1)
+
+                    Button {
+                        coordinator.beginRegionScreenshotSelection()
+                    } label: {
+                        iconLabel(systemName: "camera.fill", selected: coordinator.isSelectingRegion)
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        coordinator.toggleFreezeBackground()
+                    } label: {
+                        iconLabel(systemName: "snowflake", selected: coordinator.isBackgroundFrozen)
+                    }
+                    .buttonStyle(.plain)
+                    actionButton(systemName: "trash.fill") {
+                        coordinator.document.clear()
+                    }
+                }
+                .transition(.opacity)
             }
-            .buttonStyle(.plain)
-            Button {
-                coordinator.toggleFreezeBackground()
-            } label: {
-                iconLabel(systemName: "snowflake", selected: coordinator.isBackgroundFrozen)
-            }
-            .buttonStyle(.plain)
-            actionButton(systemName: "trash.fill") {
-                coordinator.document.clear()
-            }
-            actionButton(systemName: coordinator.isCanvasHidden ? "eye.fill" : "eye.slash.fill") {
-                coordinator.toggleHideCanvas()
-            }
-            actionButton(systemName: "xmark.circle.fill", tint: .red) {
-                coordinator.disableDrawMode()
+
+            collapseButton
+
+            if !coordinator.isSidebarCollapsed {
+                actionButton(systemName: "xmark.circle.fill", tint: .red) {
+                    coordinator.disableDrawMode()
+                }
+                .transition(.opacity)
             }
         }
         .padding(.vertical, 18)
@@ -55,6 +64,32 @@ struct ToolbarView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
+        // `NSHostingView` centers content that's smaller than its own bounds by
+        // default. While collapsing/expanding, the panel's actual frame briefly
+        // lags behind (or leads) the VStack's own ideal size, and without pinning
+        // to the top here the whole toolbar would visibly drift toward the
+        // panel's vertical center during that gap instead of staying anchored
+        // at the color swatch, which is what made the resize read as a glitch.
+        .frame(maxHeight: .infinity, alignment: .top)
+        // Placed last so it wraps every modifier above, including the frame/
+        // alignment change — `DrawSessionCoordinator.toggleSidebarCollapsed`
+        // also wraps its own mutation in `withAnimation` for the branch that
+        // isn't already covered by an async dispatch.
+        .animation(.easeInOut(duration: DrawSessionCoordinator.sidebarAnimationDuration), value: coordinator.isSidebarCollapsed)
+    }
+
+    private var collapseButton: some View {
+        Button {
+            coordinator.toggleSidebarCollapsed()
+        } label: {
+            iconLabel(systemName: "chevron.up", selected: false)
+                .rotationEffect(.degrees(coordinator.isSidebarCollapsed ? 180 : 0))
+                // Image's default hit area hugs the glyph itself (thin for a
+                // chevron), not the 36x36 frame around it — same class of issue
+                // as the brush-size dot below; widen it to the whole square.
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var colorSwatch: some View {
@@ -100,6 +135,10 @@ struct ToolbarView: View {
     }
 
     private var shapeButton: some View {
+        // `Menu`'s own label rendering doesn't reliably show a background applied
+        // inside the label (the accent highlight silently didn't show up there) —
+        // applying it to the `Menu` itself instead, behind its native control,
+        // works around that and matches the other tool buttons.
         Menu {
             ForEach(ShapeKind.allCases, id: \.self) { shape in
                 Button(shape.displayName) {
@@ -107,10 +146,16 @@ struct ToolbarView: View {
                 }
             }
         } label: {
-            iconLabel(systemName: coordinator.toolState.selectedShape.symbolName, selected: coordinator.toolState.selectedTool == .shape)
+            Image(systemName: coordinator.toolState.selectedShape.symbolName)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .frame(width: 36, height: 36)
+        .background(coordinator.toolState.selectedTool == .shape ? Color.accentColor : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func toolButton(_ tool: DrawingTool, systemName: String) -> some View {

@@ -24,7 +24,10 @@ final class CanvasViewGeometryTests: XCTestCase {
             let type = raw.withUnsafeMutableBufferPointer { buffer in
                 path.element(at: index, associatedPoints: buffer.baseAddress)
             }
-            return Element(type: type, point: raw[0])
+            // For `.cubicCurveTo`, `associatedPoints` is [controlPoint1, controlPoint2,
+            // endpoint] — the destination is the third point, not the first.
+            let point = type == .cubicCurveTo ? raw[2] : raw[0]
+            return Element(type: type, point: point)
         }
     }
 
@@ -99,6 +102,145 @@ final class CanvasViewGeometryTests: XCTestCase {
         for element in elements {
             XCTAssertTrue(element.point.x.isFinite, "arrow geometry produced a non-finite x for a zero-length shaft")
             XCTAssertTrue(element.point.y.isFinite, "arrow geometry produced a non-finite y for a zero-length shaft")
+        }
+    }
+
+    // MARK: - constrainedShapePoint (Shift-to-square/circle)
+
+    func testShiftNotHeldReturnsThePointUnchanged() {
+        let point = CGPoint(x: 130, y: 40)
+        let result = CanvasView.constrainedShapePoint(from: .zero, to: point, kind: .rectangle, shiftHeld: false)
+        assertPoint(result, point)
+    }
+
+    func testShiftHeldOnLineOrArrowLeavesThePointUnchanged() {
+        let point = CGPoint(x: 130, y: 40)
+        for kind: ShapeKind in [.line, .arrow] {
+            let result = CanvasView.constrainedShapePoint(from: .zero, to: point, kind: kind, shiftHeld: true)
+            assertPoint(result, point)
+        }
+    }
+
+    func testShiftHeldOnRectangleOrEllipseLocksToTheLargerDelta() {
+        let start = CGPoint(x: 0, y: 0)
+        for kind: ShapeKind in [.rectangle, .ellipse] {
+            // Wider than tall: the shorter (y) delta is stretched to match x.
+            assertPoint(
+                CanvasView.constrainedShapePoint(from: start, to: CGPoint(x: 100, y: 40), kind: kind, shiftHeld: true),
+                CGPoint(x: 100, y: 100)
+            )
+            // Taller than wide: the shorter (x) delta is stretched to match y.
+            assertPoint(
+                CanvasView.constrainedShapePoint(from: start, to: CGPoint(x: 40, y: 100), kind: kind, shiftHeld: true),
+                CGPoint(x: 100, y: 100)
+            )
+        }
+    }
+
+    func testShiftHeldPreservesTheDragDirectionInBothAxes() {
+        let start = CGPoint(x: 50, y: 50)
+        let result = CanvasView.constrainedShapePoint(from: start, to: CGPoint(x: 10, y: 5), kind: .rectangle, shiftHeld: true)
+        assertPoint(result, CGPoint(x: 5, y: 5))
+    }
+
+    // MARK: - smoothedPath (freehand stroke smoothing)
+
+    func testSinglePointProducesNoDrawableSegment() {
+        // Guarded upstream by `drawStroke`'s `points.count > 1` check, but the
+        // helper itself shouldn't crash if ever called with a lone point.
+        let path = CanvasView.smoothedPath(through: [CGPoint(x: 5, y: 5)])
+        XCTAssertEqual(path.elementCount, 1)
+        XCTAssertEqual(elements(of: path)[0].type, .moveTo)
+    }
+
+    func testTwoPointsProduceAStraightLine() {
+        let start = CGPoint(x: 0, y: 0)
+        let end = CGPoint(x: 100, y: 40)
+        let path = CanvasView.smoothedPath(through: [start, end])
+        let els = elements(of: path)
+
+        XCTAssertEqual(els.count, 2)
+        XCTAssertEqual(els[0].type, .moveTo)
+        assertPoint(els[0].point, start)
+        XCTAssertEqual(els[1].type, .lineTo)
+        assertPoint(els[1].point, end)
+    }
+
+    /// Three points produce: a (degenerate, but still a real curve element) straight
+    /// lead-in from the first point to the first midpoint, a curve rounding the
+    /// corner at the middle point, and a straight lead-out from the last midpoint
+    /// to the final point.
+    func testThreePointsRoundTheMiddleCornerWithStraightLeadInAndOut() {
+        let p0 = CGPoint(x: 0, y: 0)
+        let p1 = CGPoint(x: 50, y: 30)
+        let p2 = CGPoint(x: 100, y: 0)
+        let path = CanvasView.smoothedPath(through: [p0, p1, p2])
+        let els = elements(of: path)
+
+        XCTAssertEqual(els.count, 4)
+        XCTAssertEqual(els[0].type, .moveTo)
+        assertPoint(els[0].point, p0)
+
+        let mid01 = CGPoint(x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2)
+        let mid12 = CGPoint(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2)
+
+        XCTAssertEqual(els[1].type, .cubicCurveTo)
+        assertPoint(els[1].point, mid01)
+        XCTAssertEqual(els[2].type, .cubicCurveTo)
+        assertPoint(els[2].point, mid12)
+        XCTAssertEqual(els[3].type, .lineTo)
+        assertPoint(els[3].point, p2)
+    }
+
+    /// The lead-in curve's quad control point equals its own start point (`p0`),
+    /// which makes it mathematically degenerate into a straight line even though
+    /// it's still emitted as a `cubicCurveTo` element — verified here by checking
+    /// its associated control points are colinear with the p0->mid01 segment
+    /// rather than bulging off of it.
+    func testLeadInCurveIsColinearDespiteBeingACurveElement() {
+        let p0 = CGPoint(x: 0, y: 0)
+        let p1 = CGPoint(x: 50, y: 30)
+        let p2 = CGPoint(x: 100, y: 0)
+        let path = CanvasView.smoothedPath(through: [p0, p1, p2])
+
+        var raw = [NSPoint](repeating: .zero, count: 3)
+        let type = raw.withUnsafeMutableBufferPointer { buffer in
+            path.element(at: 1, associatedPoints: buffer.baseAddress)
+        }
+        XCTAssertEqual(type, .cubicCurveTo)
+
+        let mid01 = CGPoint(x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2)
+        for controlPoint in [raw[0], raw[1]] {
+            let cross = (controlPoint.x - p0.x) * (mid01.y - p0.y) - (controlPoint.y - p0.y) * (mid01.x - p0.x)
+            XCTAssertEqual(cross, 0, accuracy: 0.001, "lead-in control point strayed off the p0->mid01 line")
+        }
+    }
+
+    func testProducedPathStaysWithinTheBoundingBoxOfItsInputPoints() {
+        // A smoothed stroke should never overshoot its own samples — every element's
+        // associated point (including cubic control points) must stay within the
+        // bounding box of the raw input, otherwise the curve would visibly bulge
+        // past where the pointer actually moved.
+        let points = [
+            CGPoint(x: 0, y: 0), CGPoint(x: 20, y: 40), CGPoint(x: 60, y: -10),
+            CGPoint(x: 90, y: 30), CGPoint(x: 120, y: 0),
+        ]
+        let path = CanvasView.smoothedPath(through: points)
+        let minX = points.map(\.x).min()!, maxX = points.map(\.x).max()!
+        let minY = points.map(\.y).min()!, maxY = points.map(\.y).max()!
+
+        var raw = [NSPoint](repeating: .zero, count: 3)
+        for index in 0..<path.elementCount {
+            let type = raw.withUnsafeMutableBufferPointer { buffer in
+                path.element(at: index, associatedPoints: buffer.baseAddress)
+            }
+            let count = type == .cubicCurveTo ? 3 : 1
+            for i in 0..<count {
+                XCTAssertGreaterThanOrEqual(raw[i].x, minX - 0.001)
+                XCTAssertLessThanOrEqual(raw[i].x, maxX + 0.001)
+                XCTAssertGreaterThanOrEqual(raw[i].y, minY - 0.001)
+                XCTAssertLessThanOrEqual(raw[i].y, maxY + 0.001)
+            }
         }
     }
 }

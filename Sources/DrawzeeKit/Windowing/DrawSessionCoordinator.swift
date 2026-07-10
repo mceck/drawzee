@@ -1,13 +1,18 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// Owns the drawing session end-to-end: one overlay per screen, the single
 /// draggable toolbar, the shared document, and the currently selected tool.
 /// This is the one place that decides which panel is key and how draw mode's
 /// lifecycle plays out, so window-focus bugs have a single place to live.
 public final class DrawSessionCoordinator: ObservableObject {
+    /// Shared with `ToolbarView`'s content fade so the two animations line up.
+    public static let sidebarAnimationDuration: TimeInterval = 0.2
+
     @Published public private(set) var isDrawModeActive = false
     @Published public private(set) var isCanvasHidden = false
+    @Published public private(set) var isSidebarCollapsed = false
     @Published public var toolState = ToolState()
     @Published public private(set) var isSelectingRegion = false
     @Published public private(set) var isBackgroundFrozen = false
@@ -78,6 +83,8 @@ public final class DrawSessionCoordinator: ObservableObject {
         previouslyActiveApp = NSWorkspace.shared.frontmostApplication
         isDrawModeActive = true
         isCanvasHidden = false
+        isSidebarCollapsed = false
+        toolbarController.setCollapsed(false)
         // Every fresh draw-mode session starts from a known, predictable tool
         // rather than whatever was left selected last time (e.g. spotlight).
         toolState.selectedTool = .pen
@@ -107,6 +114,35 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func toggleHideCanvas() {
         isCanvasHidden.toggle()
         overlayControllers.forEach { $0.setCanvasHidden(isCanvasHidden) }
+    }
+
+    /// The panel resize and the SwiftUI content fade are two independent animation
+    /// systems; running them at the same time let the shrinking/growing window
+    /// clip the still-fading content mid-transition. Sequencing them — fade out
+    /// then shrink, or grow then fade in — means content is never asked to render
+    /// outside the panel's current bounds.
+    public func toggleSidebarCollapsed() {
+        if isSidebarCollapsed {
+            toolbarController.setCollapsed(false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarAnimationDuration) { [weak self] in
+                guard let self else { return }
+                withAnimation(.easeInOut(duration: Self.sidebarAnimationDuration)) {
+                    self.isSidebarCollapsed = false
+                }
+            }
+        } else {
+            // `isSidebarCollapsed` is mutated here from inside a Button action, not
+            // from an async callback, but explicitly wrapping it in `withAnimation`
+            // (rather than relying solely on `ToolbarView`'s `.animation(value:)`)
+            // is what reliably drives the fade-out — without it, this branch was
+            // snapping the content away instantly instead of fading it.
+            withAnimation(.easeInOut(duration: Self.sidebarAnimationDuration)) {
+                isSidebarCollapsed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.sidebarAnimationDuration) { [weak self] in
+                self?.toolbarController.setCollapsed(true)
+            }
+        }
     }
 
     // MARK: - Tool selection

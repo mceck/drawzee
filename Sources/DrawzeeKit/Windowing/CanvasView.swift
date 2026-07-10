@@ -148,8 +148,11 @@ public final class CanvasView: NSView {
             currentStrokePoints.append(point)
             needsDisplay = true
         case .shape:
-            guard isDrawingInProgress else { return }
-            shapeCurrent = point
+            guard isDrawingInProgress, let start = shapeStart else { return }
+            shapeCurrent = CanvasView.constrainedShapePoint(
+                from: start, to: point, kind: tool.selectedShape,
+                shiftHeld: event.modifierFlags.contains(.shift)
+            )
             needsDisplay = true
         default:
             break
@@ -352,14 +355,54 @@ public final class CanvasView: NSView {
 
     private func drawStroke(points: [CGPoint], color: NSColor, width: CGFloat, highlighter: Bool) {
         guard points.count > 1 else { return }
-        let path = NSBezierPath()
+        let path = CanvasView.smoothedPath(through: points)
         path.lineWidth = highlighter ? width * 3 : width
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
-        path.move(to: points[0])
-        points.dropFirst().forEach { path.line(to: $0) }
         color.withAlphaComponent(highlighter ? 0.35 : 1.0).setStroke()
         path.stroke()
+    }
+
+    /// Raw mouse/trackpad samples arrive as a jagged polyline; connecting them with
+    /// straight `line(to:)` segments (the old behavior) makes every stroke look
+    /// faceted rather than hand-drawn, especially wherever the pointer moved fast
+    /// enough that consecutive samples are far apart. This runs the standard
+    /// "smoothed freehand line" construction: the curve passes through the
+    /// *midpoint* between each pair of consecutive points, using the real point
+    /// between them as the pull (control) point for a quadratic curve — so every
+    /// sampled point still shapes the curve, but corners get rounded instead of
+    /// kinked. The very first and last segments (point to first midpoint, last
+    /// midpoint to point) are left straight, matching the algorithm's standard form.
+    static func smoothedPath(through points: [CGPoint]) -> NSBezierPath {
+        let path = NSBezierPath()
+        guard points.count > 2 else {
+            path.move(to: points[0])
+            points.dropFirst().forEach { path.line(to: $0) }
+            return path
+        }
+
+        path.move(to: points[0])
+        var control = points[0]
+        var upcoming = points[1]
+        for index in 1..<points.count {
+            let midpoint = CGPoint(x: (control.x + upcoming.x) / 2, y: (control.y + upcoming.y) / 2)
+            appendQuadCurve(to: midpoint, control: control, on: path)
+            control = points[index]
+            upcoming = index + 1 < points.count ? points[index + 1] : points[index]
+        }
+        path.line(to: control)
+        return path
+    }
+
+    /// `NSBezierPath` only exposes a cubic `curve(to:controlPoint1:controlPoint2:)`,
+    /// so a quadratic curve (a single control point) is degree-elevated into the
+    /// exact equivalent cubic: each cubic control point sits 2/3 of the way from
+    /// its endpoint toward the quadratic control point.
+    private static func appendQuadCurve(to end: CGPoint, control: CGPoint, on path: NSBezierPath) {
+        let start = path.currentPoint
+        let control1 = CGPoint(x: start.x + (control.x - start.x) * 2 / 3, y: start.y + (control.y - start.y) * 2 / 3)
+        let control2 = CGPoint(x: end.x + (control.x - end.x) * 2 / 3, y: end.y + (control.y - end.y) * 2 / 3)
+        path.curve(to: end, controlPoint1: control1, controlPoint2: control2)
     }
 
     private func drawShape(kind: ShapeKind, start: CGPoint, end: CGPoint, color: NSColor, width: CGFloat) {
@@ -380,6 +423,22 @@ public final class CanvasView: NSView {
         }
         path.lineWidth = width
         path.stroke()
+    }
+
+    /// Holding Shift while dragging a rectangle/ellipse locks it to a square/circle
+    /// (the common convention in design tools), sized to the larger of the two
+    /// deltas so the shape keeps growing as the cursor moves along either axis.
+    /// Line/arrow aren't directional in the same sense, so Shift is left alone
+    /// for them here.
+    static func constrainedShapePoint(from start: CGPoint, to point: CGPoint, kind: ShapeKind, shiftHeld: Bool) -> CGPoint {
+        guard shiftHeld, kind == .rectangle || kind == .ellipse else { return point }
+        let dx = point.x - start.x
+        let dy = point.y - start.y
+        let side = max(abs(dx), abs(dy))
+        return CGPoint(
+            x: start.x + (dx < 0 ? -side : side),
+            y: start.y + (dy < 0 ? -side : side)
+        )
     }
 
     static func arrowPath(from start: CGPoint, to end: CGPoint) -> NSBezierPath {
