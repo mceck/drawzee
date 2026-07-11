@@ -21,12 +21,17 @@ public final class CanvasView: NSView {
     private var shapeCurrent: CGPoint?
     private var isDrawingInProgress = false
 
-    /// Move-tool drag state: the object grabbed at mouse-down and the last
-    /// drag location, so each `mouseDragged` applies only the incremental
-    /// delta (the document mutates in place; re-deriving from the original
-    /// mouse-down point would double-apply movement).
-    private var movingObjectID: UUID?
+    /// Move-tool state: the set of currently selected object IDs, the subset
+    /// being actively dragged (set at mouse-down), and the last drag location
+    /// so each `mouseDragged` applies only the incremental delta.
+    private var selectedObjectIDs: Set<UUID> = []
+    private var movingObjectIDs: Set<UUID> = []
     private var lastMovePoint: CGPoint = .zero
+
+    /// Marquee selection state (drag on empty space with the move tool).
+    private var isMarqueeSelecting = false
+    private var marqueeStart: CGPoint = .zero
+    private var marqueeCurrent: CGPoint = .zero
 
     private var spotlightLayer: CAShapeLayer?
     private var activeTextView: CommittingTextView?
@@ -140,8 +145,36 @@ public final class CanvasView: NSView {
         case .text:
             beginTextEditing(at: point)
         case .move:
-            movingObjectID = topmostObject(at: point)?.id
-            lastMovePoint = point
+            if let hit = topmostObject(at: point) {
+                if event.modifierFlags.contains(.shift) {
+                    if selectedObjectIDs.contains(hit.id) {
+                        selectedObjectIDs.remove(hit.id)
+                    } else {
+                        selectedObjectIDs.insert(hit.id)
+                    }
+                    movingObjectIDs = selectedObjectIDs
+                } else {
+                    if !selectedObjectIDs.contains(hit.id) {
+                        selectedObjectIDs = [hit.id]
+                    }
+                    movingObjectIDs = selectedObjectIDs
+                }
+                lastMovePoint = point
+                needsDisplay = true
+            } else if !event.modifierFlags.contains(.shift), !selectedObjectIDs.isEmpty, let box = selectionBoundingBox, box.contains(point) {
+                movingObjectIDs = selectedObjectIDs
+                lastMovePoint = point
+                needsDisplay = true
+            } else {
+                if !event.modifierFlags.contains(.shift) {
+                    selectedObjectIDs = []
+                    needsDisplay = true
+                }
+                isMarqueeSelecting = true
+                marqueeStart = point
+                marqueeCurrent = point
+                movingObjectIDs = []
+            }
         case .eraser:
             if let hit = topmostObject(at: point) {
                 document?.remove(id: hit.id)
@@ -174,9 +207,15 @@ public final class CanvasView: NSView {
             )
             needsDisplay = true
         case .move:
-            guard let id = movingObjectID else { return }
-            document?.translate(id: id, by: CGPoint(x: point.x - lastMovePoint.x, y: point.y - lastMovePoint.y))
-            lastMovePoint = point
+            if isMarqueeSelecting {
+                marqueeCurrent = point
+                needsDisplay = true
+            } else {
+                guard !movingObjectIDs.isEmpty else { return }
+                let delta = CGPoint(x: point.x - lastMovePoint.x, y: point.y - lastMovePoint.y)
+                document?.translate(ids: movingObjectIDs, by: delta)
+                lastMovePoint = point
+            }
         case .eraser:
             // Keeping the eraser live during a drag turns "click each stroke"
             // into the natural "swipe across everything to erase" gesture.
@@ -201,7 +240,29 @@ public final class CanvasView: NSView {
             onRegionSelected?(rect)
             return
         }
-        movingObjectID = nil
+        if isMarqueeSelecting {
+            defer {
+                isMarqueeSelecting = false
+                marqueeStart = .zero
+                marqueeCurrent = .zero
+                needsDisplay = true
+            }
+            let rect = CGRect(
+                x: min(marqueeStart.x, marqueeCurrent.x), y: min(marqueeStart.y, marqueeCurrent.y),
+                width: abs(marqueeCurrent.x - marqueeStart.x), height: abs(marqueeCurrent.y - marqueeStart.y)
+            )
+            guard rect.width > 4, rect.height > 4 else { return }
+            let marqueeIDs = Set(
+                (document?.objects(for: screenID) ?? []).filter { $0.boundingBox.intersects(rect) }.map(\.id)
+            )
+            if event.modifierFlags.contains(.shift) {
+                selectedObjectIDs.formUnion(marqueeIDs)
+            } else {
+                selectedObjectIDs = marqueeIDs
+            }
+            return
+        }
+        movingObjectIDs = []
         guard isDrawingInProgress else { return }
         isDrawingInProgress = false
         switch tool.selectedTool {
@@ -351,9 +412,6 @@ public final class CanvasView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         if let frozenBackgroundImage {
-            // `draw(in:)` always stretches the image's full pixel content into the destination
-            // rect regardless of the image's declared `.size`, so this fills `bounds` correctly
-            // even though the captured image's size is in pixels, not points.
             frozenBackgroundImage.draw(in: bounds)
         } else {
             NSColor.clear.set()
@@ -361,9 +419,14 @@ public final class CanvasView: NSView {
         }
 
         document?.objects(for: screenID).forEach(render)
+        drawSelectionHighlights()
 
         if isSelectingRegion {
             drawRegionSelectionOverlay()
+        }
+
+        if isMarqueeSelecting {
+            drawMarqueeSelection()
         }
 
         if isDrawingInProgress {
@@ -552,6 +615,63 @@ public final class CanvasView: NSView {
         // `commitTextEditing`); in this non-flipped view, `draw(at:)` anchors its
         // point at exactly that corner, so no extra offset is needed here.
         NSAttributedString(string: text.string, attributes: attributes).draw(at: text.origin)
+    }
+
+    // MARK: - Selection (move tool)
+
+    /// The set of object IDs currently selected on this canvas.
+    var currentSelectedObjectIDs: Set<UUID> { selectedObjectIDs }
+
+    func clearSelection() {
+        selectedObjectIDs = []
+        movingObjectIDs = []
+        needsDisplay = true
+    }
+
+    /// Union of all selected objects' bounding boxes on this screen, or nil
+    /// if nothing is selected. Used to allow clicks anywhere inside the
+    /// selection area to start a drag.
+    private var selectionBoundingBox: CGRect? {
+        guard !selectedObjectIDs.isEmpty, let objects = document?.objects(for: screenID) else { return nil }
+        var union: CGRect?
+        for object in objects where selectedObjectIDs.contains(object.id) {
+            let box = object.boundingBox.insetBy(dx: -4, dy: -4)
+            union = union?.union(box) ?? box
+        }
+        return union
+    }
+
+    /// Draws a light blue highlight around every selected object, so the user
+    /// can see which objects will move together.
+    private func drawSelectionHighlights() {
+        guard !selectedObjectIDs.isEmpty else { return }
+        guard let objects = document?.objects(for: screenID) else { return }
+        for object in objects where selectedObjectIDs.contains(object.id) {
+            let box = object.boundingBox.insetBy(dx: -4, dy: -4)
+            NSColor.systemBlue.withAlphaComponent(0.12).setFill()
+            NSBezierPath(rect: box).fill()
+            let border = NSBezierPath(rect: box)
+            border.lineWidth = 1.5
+            NSColor.systemBlue.withAlphaComponent(0.6).setStroke()
+            border.stroke()
+        }
+    }
+
+    /// Rubber-band selection rectangle drawn while dragging on empty space
+    /// with the move tool.
+    private func drawMarqueeSelection() {
+        let rect = CGRect(
+            x: min(marqueeStart.x, marqueeCurrent.x), y: min(marqueeStart.y, marqueeCurrent.y),
+            width: abs(marqueeCurrent.x - marqueeStart.x), height: abs(marqueeCurrent.y - marqueeStart.y)
+        )
+        NSColor.systemBlue.withAlphaComponent(0.08).setFill()
+        NSBezierPath(rect: rect).fill()
+        let border = NSBezierPath(rect: rect)
+        border.lineWidth = 1.5
+        NSColor.systemBlue.withAlphaComponent(0.5).setStroke()
+        let dashes: [CGFloat] = [6, 4]
+        border.setLineDash(dashes, count: 2, phase: 0)
+        border.stroke()
     }
 }
 

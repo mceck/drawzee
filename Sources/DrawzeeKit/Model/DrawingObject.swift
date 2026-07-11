@@ -93,4 +93,35 @@ public enum DrawingObject: Identifiable {
             return .text(object)
         }
     }
+
+    /// The axis-aligned bounding box of this object's visible geometry, in its
+    /// own canvas coordinate space. Used for marquee selection and selection
+    /// highlight rendering.
+    public var boundingBox: CGRect {
+        switch self {
+        case .stroke(let stroke):
+            guard !stroke.points.isEmpty else { return .zero }
+            let xs = stroke.points.map(\.x)
+            let ys = stroke.points.map(\.y)
+            let inset = stroke.width / 2
+            let minX = xs.min()! - inset
+            let maxX = xs.max()! + inset
+            let minY = ys.min()! - inset
+            let maxY = ys.max()! + inset
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        case .shape(let shape):
+            let inset = shape.width / 2
+            let minX = min(shape.startPoint.x, shape.endPoint.x) - inset
+            let maxX = max(shape.startPoint.x, shape.endPoint.x) + inset
+            let minY = min(shape.startPoint.y, shape.endPoint.y) - inset
+            let maxY = max(shape.startPoint.y, shape.endPoint.y) + inset
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        case .text(let text):
+            let size = NSAttributedString(
+                string: text.string,
+                attributes: [.font: NSFont.systemFont(ofSize: text.fontSize)]
+            ).size()
+            return CGRect(origin: text.origin, size: size)
+        }
+    }
 }

@@ -142,7 +142,7 @@ public final class HotkeyManager {
             (.toggleAutofade, { coordinator.toggleAutofade() }),
             (.redo, { coordinator.document.redo() }),
             (.undo, { coordinator.document.undo() }),
-            (.clearCanvas, { coordinator.document.clear() }),
+            (.clearCanvas, { coordinator.deleteSelected() }),
             (.toolPen, { coordinator.selectTool(.pen) }),
             (.toolHighlighter, { coordinator.selectTool(.highlighter) }),
             (.toolShape, { coordinator.selectTool(.shape) }),

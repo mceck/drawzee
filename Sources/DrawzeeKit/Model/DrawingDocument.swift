@@ -45,6 +45,19 @@ public final class DrawingDocument {
         onChange?()
     }
 
+    /// Moves a set of objects in place. Same undo philosophy as the single-
+    /// object variant: positional edits are not part of the undo history.
+    public func translate(ids: Set<UUID>, by delta: CGPoint) {
+        guard !ids.isEmpty else { return }
+        var changed = false
+        for id in ids {
+            guard let index = objects.firstIndex(where: { $0.id == id }) else { continue }
+            objects[index] = objects[index].translated(by: delta)
+            changed = true
+        }
+        if changed { onChange?() }
+    }
+
     /// Removes one specific object without touching the redo stack — used by
     /// the eraser tool and when an auto-fade erase completes. Neither is an
     /// undoable action: "undo" keeps meaning "take back my last drawing",

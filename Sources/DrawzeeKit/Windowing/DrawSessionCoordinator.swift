@@ -112,6 +112,7 @@ public final class DrawSessionCoordinator: ObservableObject {
         // rather than whatever was left selected last time (e.g. spotlight).
         toolState.selectedTool = .pen
         toolBeforeSpotlight = nil
+        overlayControllers.forEach { $0.canvasView.clearSelection() }
         // Same predictable-start philosophy as the tool reset above: auto-fade
         // is opt-in per session.
         isAutofadeEnabled = false
@@ -200,6 +201,9 @@ public final class DrawSessionCoordinator: ObservableObject {
         }
         if tool == .spotlight {
             toolBeforeSpotlight = toolState.selectedTool
+        }
+        if toolState.selectedTool == .move, tool != .move {
+            overlayControllers.forEach { $0.canvasView.clearSelection() }
         }
         toolState.selectedTool = tool
     }
@@ -344,6 +348,20 @@ public final class DrawSessionCoordinator: ObservableObject {
                 excludingWindowNumbers: excludedWindowNumbers,
                 saveToDisk: saveToDisk
             )
+        }
+    }
+
+    // MARK: - Delete
+
+    /// Deletes the currently selected objects, or clears the entire canvas if
+    /// nothing is selected. Called by the Delete key.
+    func deleteSelected() {
+        let ids = overlayControllers.reduce(into: Set<UUID>()) { $0.formUnion($1.canvasView.currentSelectedObjectIDs) }
+        if !ids.isEmpty {
+            for id in ids { document.remove(id: id) }
+            overlayControllers.forEach { $0.canvasView.clearSelection() }
+        } else {
+            document.clear()
         }
     }
 }
