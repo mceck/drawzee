@@ -8,6 +8,9 @@ Live, over whatever is running underneath across every monitor you have connecte
 
 Drawzee lives quietly in the menu bar. Turns your whole desktop into a canvas whenever you need to point something out annotate a video call or mark up what's on screen.
 
+[![Drawzee](docs/demo.webp)](#)
+
+
 ## Installation
 
 [Download here](https://github.com/mceck/drawzee/releases/download/latest/Drawzee.dmg)
