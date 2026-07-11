@@ -34,6 +34,8 @@ public final class CanvasView: NSView {
     private var marqueeCurrent: CGPoint = .zero
 
     private var spotlightLayer: CAShapeLayer?
+    private var spotlightRadius: CGFloat = 130
+    private var spotlightPoint: CGPoint = .zero
     private var activeTextView: CommittingTextView?
     private var frozenBackgroundImage: NSImage?
 
@@ -288,6 +290,14 @@ public final class CanvasView: NSView {
         needsDisplay = true
     }
 
+    public override func scrollWheel(with event: NSEvent) {
+        guard tool.selectedTool == .spotlight, event.modifierFlags.contains(.command) else {
+            return
+        }
+        spotlightRadius = max(40, min(400, spotlightRadius - event.scrollingDeltaY))
+        updateSpotlight(at: spotlightPoint)
+    }
+
     public override func mouseMoved(with event: NSEvent) {
         // Cursor rects (`resetCursorRects`) only reliably repaint the pointer on
         // this view's own key/main transitions, not on every move across a
@@ -309,9 +319,11 @@ public final class CanvasView: NSView {
         guard spotlightLayer != nil else { return }
         spotlightLayer?.removeFromSuperlayer()
         spotlightLayer = nil
+        spotlightRadius = 130
     }
 
     private func updateSpotlight(at point: CGPoint) {
+        spotlightPoint = point
         if spotlightLayer == nil {
             let layer = CAShapeLayer()
             layer.fillRule = .evenOdd
@@ -319,10 +331,9 @@ public final class CanvasView: NSView {
             self.layer?.addSublayer(layer)
             spotlightLayer = layer
         }
-        let radius: CGFloat = 130
         let path = CGMutablePath()
         path.addRect(bounds)
-        path.addEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
+        path.addEllipse(in: CGRect(x: point.x - spotlightRadius, y: point.y - spotlightRadius, width: spotlightRadius * 2, height: spotlightRadius * 2))
         spotlightLayer?.frame = bounds
         spotlightLayer?.path = path
     }

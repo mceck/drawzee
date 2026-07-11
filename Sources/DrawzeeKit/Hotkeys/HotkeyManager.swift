@@ -131,7 +131,13 @@ public final class HotkeyManager {
         }
 
         let actions: [(ShortcutAction, () -> Void)] = [
-            (.exitDrawMode, { coordinator.disableDrawMode() }),
+            (.exitDrawMode, {
+                if coordinator.toolState.selectedTool == .spotlight {
+                    coordinator.selectTool(.spotlight)
+                } else {
+                    coordinator.disableDrawMode()
+                }
+            }),
             (.hideCanvas, { coordinator.toggleHideCanvas() }),
             (.toggleSidebar, { coordinator.toggleSidebarCollapsed() }),
             (.hideSidebar, { coordinator.toggleSidebarHidden() }),
