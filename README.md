@@ -3,9 +3,24 @@
 Draw on top of your screen.
 Live, over whatever is running underneath across every monitor you have connected. 
 
+
 ![Drawzee](docs/logo.png)
 
 Drawzee lives quietly in the menu bar. Turns your whole desktop into a canvas whenever you need to point something out annotate a video call or mark up what's on screen.
+
+## Installation
+
+[Download here](https://github.com/mceck/drawzee/releases/download/latest/Drawzee.dmg)
+
+Or build it from sources
+```bash
+Scripts/build.sh
+Scripts/install.sh
+```
+
+Drawzee isn't signed with a paid Apple Developer certificate, so macOS flags it as "unverified".
+You'll need to allow opening in System Settings → Privacy & Security
+or run this: `xattr -cr /Applications/Drawzee.app`
 
 ## Features
 
@@ -40,40 +55,6 @@ shortcut, editable from Settings.
 * macOS 14 (Sonoma). Later
 
 * Xcode 15+ / the Swift 5.10 toolchain, if you're building from source
-
-## Building & Installing
-
-Drawzee is a Swift Package. To build and install:
-
-```bash
-
-# quick compile check
-
-swift build
-
-# run the unit tests
-
-swift test
-
-# build a real signed.app bundle. Install it into /Applications
-
-Scripts/build.sh
-
-Scripts/install.sh
-
-```
-
-Then launch it like any other Mac app:
-
-```bash
-
-open /Applications/Drawzee.app
-
-```
-
-Installing to `/Applications` makes **Start at Login** work reliably.
-
-> **Note:** always launch the `.app` bundle (`open Drawzee.app`) not the compiled binary.
 
 ## First Launch: Permissions
 
