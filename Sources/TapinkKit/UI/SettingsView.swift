@@ -52,6 +52,15 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Show cursor in recordings", isOn: $model.recordCursorInVideos)
+                Stepper(value: $model.maxRecordingDurationMinutes, in: 1...180, step: 1) {
+                    HStack {
+                        Text("Stop recordings automatically after")
+                        Spacer()
+                        Text("\(Int(model.maxRecordingDurationMinutes)) min")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
             }
             Section("Shortcuts") {
                 ForEach(ShortcutAction.allCases, id: \.self) { action in
@@ -111,6 +120,9 @@ final class SettingsViewModel: ObservableObject {
     @Published var recordCursorInVideos: Bool {
         didSet { AppSettings.shared.recordCursorInVideos = recordCursorInVideos }
     }
+    @Published var maxRecordingDurationMinutes: Double {
+        didSet { AppSettings.shared.maxRecordingDurationMinutes = maxRecordingDurationMinutes }
+    }
 
     init() {
         startAtLogin = LoginItemManager.shared.isEnabled
@@ -120,6 +132,7 @@ final class SettingsViewModel: ObservableObject {
         autofadeDelay = AppSettings.shared.autofadeDelaySeconds
         startWithSidebarHidden = AppSettings.shared.startDrawModeWithSidebarHidden
         recordCursorInVideos = AppSettings.shared.recordCursorInVideos
+        maxRecordingDurationMinutes = AppSettings.shared.maxRecordingDurationMinutes
     }
 
     func chooseFolder() {

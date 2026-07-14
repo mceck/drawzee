@@ -8,6 +8,7 @@ final class AppSettingsTests: XCTestCase {
     private let regionDestinationKey = "regionScreenshotDestination"
     private let screenshotFolderKey = "screenshotSaveFolderPath"
     private let hideFromDockKey = "hideFromDockAndSwitcher"
+    private let maxRecordingDurationKey = "maxRecordingDurationMinutes"
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: "brushColorComponents")
@@ -15,6 +16,7 @@ final class AppSettingsTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: regionDestinationKey)
         UserDefaults.standard.removeObject(forKey: screenshotFolderKey)
         UserDefaults.standard.removeObject(forKey: hideFromDockKey)
+        UserDefaults.standard.removeObject(forKey: maxRecordingDurationKey)
         AppSettings.shared.onHideFromDockChanged = nil
         // Actions used by binding-related tests below; reset through the real API
         // (not a raw UserDefaults wipe) so the in-memory `overrides` cache the
@@ -121,6 +123,18 @@ final class AppSettingsTests: XCTestCase {
     func testScreenshotSaveFolderPathRoundTrips() {
         AppSettings.shared.screenshotSaveFolderPath = "/tmp/TapinkTestFolder"
         XCTAssertEqual(AppSettings.shared.screenshotSaveFolderPath, "/tmp/TapinkTestFolder")
+    }
+
+    // MARK: - Max recording duration
+
+    func testMaxRecordingDurationDefaultsToThirtyMinutesWhenUnset() {
+        UserDefaults.standard.removeObject(forKey: maxRecordingDurationKey)
+        XCTAssertEqual(AppSettings.shared.maxRecordingDurationMinutes, 30)
+    }
+
+    func testMaxRecordingDurationRoundTrips() {
+        AppSettings.shared.maxRecordingDurationMinutes = 45
+        XCTAssertEqual(AppSettings.shared.maxRecordingDurationMinutes, 45)
     }
 
     // MARK: - Hide from Dock / switcher

@@ -27,6 +27,7 @@ public final class AppSettings {
         static let autofadeDelay = "autofadeDelaySeconds"
         static let startWithSidebarHidden = "startDrawModeWithSidebarHidden"
         static let recordCursor = "recordCursorInVideos"
+        static let maxRecordingDuration = "maxRecordingDurationMinutes"
     }
 
     /// Called whenever `hideFromDockAndSwitcher` changes, so the app delegate can
@@ -116,6 +117,18 @@ public final class AppSettings {
     public var recordCursorInVideos: Bool {
         get { defaults.object(forKey: Keys.recordCursor) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Keys.recordCursor) }
+    }
+
+    /// A recording keeps running independent of draw mode now (Esc/exiting draw mode no
+    /// longer stops it), so this is the backstop that eventually ends it on its own if the
+    /// user forgets — read once at recording start (see `DrawSessionCoordinator
+    /// .scheduleRecordingTimeout`), not re-read live while a recording is already in flight.
+    public var maxRecordingDurationMinutes: TimeInterval {
+        get {
+            let stored = defaults.double(forKey: Keys.maxRecordingDuration)
+            return stored > 0 ? stored : 30
+        }
+        set { defaults.set(newValue, forKey: Keys.maxRecordingDuration) }
     }
 
     public var brushLineWidth: CGFloat {

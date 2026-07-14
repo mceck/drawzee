@@ -130,14 +130,6 @@ public final class HotkeyManager {
             return true
         }
 
-        // Esc while a recording is running stops the recording rather than exiting draw mode —
-        // otherwise there'd be no way to stop just the recording without also tearing down the
-        // whole session (`disableDrawMode()` would do both at once via `stopRecording()`).
-        if coordinator.activeRecordingKind != nil, settings.binding(for: .exitDrawMode).matches(event) {
-            coordinator.stopRecording()
-            return true
-        }
-
         let actions: [(ShortcutAction, () -> Void)] = [
             (.exitDrawMode, {
                 if coordinator.toolState.selectedTool == .spotlight {

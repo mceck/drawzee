@@ -51,6 +51,11 @@ public final class DrawSessionCoordinator: ObservableObject {
     /// Which screen currently shows the persistent region-recording frame overlay (see
     /// `CanvasView.setActiveRecordingFrame`), so `stopRecording()` knows where to clear it.
     private var activeRegionRecordingScreenID: ScreenID?
+    /// Backstop that auto-stops a recording after `AppSettings.maxRecordingDurationMinutes`,
+    /// since a recording no longer stops on its own when draw mode exits (see
+    /// `disableDrawMode()`). Scheduled once a recording actually starts, cancelled in
+    /// `stopRecording()`.
+    private var recordingTimeoutTimer: Timer?
 
     /// Every Tapink-owned window that must never itself appear in a screenshot or recording —
     /// the toolbar and the toast HUD. `freezeBackground()` additionally excludes the overlay
@@ -163,9 +168,10 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func disableDrawMode() {
         guard isDrawModeActive else { return }
         showToast("Draw Mode Off", systemImage: "pencil.slash")
-        // Otherwise leaving draw mode (Esc, re-toggling the activation shortcut, etc.) would
-        // abandon an in-progress recording with its asset writer never finalized.
-        stopRecording()
+        // A running recording deliberately survives Esc/exiting draw mode (it's no longer
+        // tied to the session's lifecycle) — it only ends via `stopRecording()`, called either
+        // by the user directly (status-item menu, or re-entering draw mode to toggle it off)
+        // or by `recordingTimeoutTimer` once `AppSettings.maxRecordingDurationMinutes` elapses.
         isDrawModeActive = false
         // Anything still waiting to fade (or mid-erase) was already promised to
         // disappear; finish the erase now rather than resurrecting it whole the
@@ -468,7 +474,11 @@ public final class DrawSessionCoordinator: ObservableObject {
                 displayID: displayID,
                 excludingWindowNumbers: excludedWindowNumbers
             )
-            if !started { activeRecordingKind = nil }
+            if started {
+                scheduleRecordingTimeout()
+            } else {
+                activeRecordingKind = nil
+            }
         }
     }
 
@@ -508,7 +518,9 @@ public final class DrawSessionCoordinator: ObservableObject {
                 scale: screen.backingScaleFactor,
                 excludingWindowNumbers: excludedWindowNumbers
             )
-            if !started {
+            if started {
+                scheduleRecordingTimeout()
+            } else {
                 activeRecordingKind = nil
                 activeRegionRecordingScreenID = nil
                 overlayControllers.first(where: { $0.screenID == screenID })?.setActiveRecordingFrame(nil)
@@ -516,9 +528,24 @@ public final class DrawSessionCoordinator: ObservableObject {
         }
     }
 
+    /// Schedules (replacing any existing schedule) the backstop that force-stops the current
+    /// recording after `AppSettings.maxRecordingDurationMinutes`. `.common` run-loop mode so it
+    /// still fires while the user's interacting with menus/dragging elsewhere, matching
+    /// `AutofadeController`'s timers.
+    private func scheduleRecordingTimeout() {
+        recordingTimeoutTimer?.invalidate()
+        let timer = Timer(timeInterval: AppSettings.shared.maxRecordingDurationMinutes * 60, repeats: false) { [weak self] _ in
+            self?.stopRecording()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        recordingTimeoutTimer = timer
+    }
+
     /// Stops whichever recording (screen or region) is currently active. No-op if none is.
     public func stopRecording() {
         guard activeRecordingKind != nil else { return }
+        recordingTimeoutTimer?.invalidate()
+        recordingTimeoutTimer = nil
         activeRecordingKind = nil
         if let screenID = activeRegionRecordingScreenID {
             overlayControllers.first(where: { $0.screenID == screenID })?.setActiveRecordingFrame(nil)

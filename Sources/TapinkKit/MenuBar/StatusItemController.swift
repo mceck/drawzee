@@ -5,6 +5,9 @@ public final class StatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let coordinator: DrawSessionCoordinator
     private var toggleItem: NSMenuItem!
+    /// The normal dropdown (draw-mode toggle, Settings, About, Quit). Swapped out for `nil`
+    /// while a recording is active — see `updateIcon`.
+    private var mainMenu: NSMenu!
     private var cancellables = Set<AnyCancellable>()
 
     public init(coordinator: DrawSessionCoordinator) {
@@ -19,10 +22,19 @@ public final class StatusItemController: NSObject {
             .sink { [weak self] active in self?.updateToggleTitle(active: active) }
             .store(in: &cancellables)
 
+        // A recording now outlives draw mode (see `DrawSessionCoordinator.disableDrawMode`), so
+        // this doubles as how the user stops one once the toolbar/overlay is gone: the icon
+        // turns into a plain red rec button — a single click stops the recording directly,
+        // same "no dropdown to navigate" idea as `ToolbarView`'s capture button.
         coordinator.$isDrawModeActive
-            .combineLatest(coordinator.$toolState.map(\.color).removeDuplicates())
+            .combineLatest(
+                coordinator.$toolState.map(\.color).removeDuplicates(),
+                coordinator.$activeRecordingKind.map { $0 != nil }.removeDuplicates()
+            )
             .receive(on: RunLoop.main)
-            .sink { [weak self] active, color in self?.updateIcon(active: active, color: color) }
+            .sink { [weak self] active, color, isRecording in
+                self?.updateIcon(active: active, color: color, isRecording: isRecording)
+            }
             .store(in: &cancellables)
     }
 
@@ -36,8 +48,23 @@ public final class StatusItemController: NSObject {
         button.image = image
     }
 
-    private func updateIcon(active: Bool, color: NSColor) {
+    private func updateIcon(active: Bool, color: NSColor, isRecording: Bool) {
         guard let button = statusItem.button else { return }
+        guard !isRecording else {
+            // `statusItem.menu` being non-nil always wins over the button's own action on
+            // click, so it has to come out entirely for a plain click to reach
+            // `stopRecordingButtonPressed` instead of popping the dropdown.
+            statusItem.menu = nil
+            button.target = self
+            button.action = #selector(stopRecordingButtonPressed)
+            let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Stop Recording")
+            let tinted = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemRed]))
+            tinted?.isTemplate = false
+            button.image = tinted
+            return
+        }
+        statusItem.menu = mainMenu
+        button.action = nil
         let image = NSImage(systemSymbolName: "scribble.variable", accessibilityDescription: "Tapink")
         if active {
             // While drawing, tint the icon with the current tool color. The
@@ -73,6 +100,7 @@ public final class StatusItemController: NSObject {
         quitItem.target = self
         menu.addItem(quitItem)
 
+        mainMenu = menu
         statusItem.menu = menu
     }
 
@@ -83,6 +111,10 @@ public final class StatusItemController: NSObject {
 
     @objc private func toggleDrawMode() {
         coordinator.toggleDrawMode()
+    }
+
+    @objc private func stopRecordingButtonPressed() {
+        coordinator.stopRecording()
     }
 
     @objc private func openSettings() {
