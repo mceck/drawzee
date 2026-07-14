@@ -20,7 +20,7 @@ public final class LoginItemManager {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            NSLog("Drawzee: failed to update login item registration: \(error)")
+            NSLog("Tapink: failed to update login item registration: \(error)")
         }
     }
 }

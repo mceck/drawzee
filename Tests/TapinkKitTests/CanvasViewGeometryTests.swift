@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import DrawzeeKit
+@testable import TapinkKit
 
 /// Covers `CanvasView.arrowPath`'s trigonometry directly. The arrow tool is drawn as a
 /// shaft plus two backward-swept barbs computed with `atan2`/`cos`/`sin` — exactly the

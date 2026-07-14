@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>Drawzee</string>
+    <string>Tapink</string>
     <key>CFBundleIdentifier</key>
-    <string>io.mcdev.drawzee</string>
+    <string>io.mcdev.tapink</string>
     <key>CFBundleName</key>
-    <string>Drawzee</string>
+    <string>Tapink</string>
     <key>CFBundleDisplayName</key>
-    <string>Drawzee</string>
+    <string>Tapink</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -25,6 +25,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Drawzee needs to see your screen to capture annotated screenshots.</string>
+    <string>Tapink needs to see your screen to capture annotated screenshots.</string>
 </dict>
 </plist>

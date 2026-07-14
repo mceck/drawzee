@@ -1,19 +1,19 @@
-# Drawzee
+# Tapink
 
 Draw on top of your screen.
 Live, over whatever is running underneath across every monitor you have connected. 
 
 
-![Drawzee](docs/logo.png)
+![Tapink](docs/logo.png)
 
-Drawzee lives quietly in the menu bar. Turns your whole desktop into a canvas whenever you need to point something out annotate a video call or mark up what's on screen.
+Tapink lives quietly in the menu bar. Turns your whole desktop into a canvas whenever you need to point something out annotate a video call or mark up what's on screen.
 
-[![Drawzee](docs/demo.webp)](#)
+[![Tapink](docs/demo.webp)](#)
 
 
 ## Installation
 
-[Download here](https://github.com/mceck/drawzee/releases/download/latest/Drawzee.dmg)
+[Download here](https://github.com/mceck/tapink/releases/download/latest/Tapink.dmg)
 
 Or build it from sources
 ```bash
@@ -21,37 +21,25 @@ Scripts/build.sh
 Scripts/install.sh
 ```
 
-Drawzee isn't signed with a paid Apple Developer certificate, so macOS flags it as "unverified".
+Tapink isn't signed with a paid Apple Developer certificate, so macOS flags it as "unverified".
 You'll need to allow opening in System Settings → Privacy & Security
-or run this: `xattr -cr /Applications/Drawzee.app`
+or run this: `xattr -cr /Applications/Tapink.app`
 
 ## Features
 
-* **Live overlay, not a screenshot.** The canvas shows on top of your screen in real time.
+* **Live overlay, not a screenshot.** The canvas shows on top of your screen in real time. If a video is playing underneath it keeps playing while you draw over it.
 
-If a video is playing underneath it keeps playing while you draw over it.
+* **Multi-monitor support.** Draw across every display at once; the tool sidebar lives on one screen and can be dragged to another.
 
-* **Multi-monitor support.** Draw across every display at once; the tool sidebar lives on one
+* **Full annotation tools.** Pen, highlighter, four shapes (rectangle, ellipse, line, arrow) a spotlight/flashlight tool that dims everything except a circle around your cursor and a text tool.
 
-screen and can be dragged to another.
-
-* **Full annotation tools.** Pen, highlighter, four shapes (rectangle, ellipse, line, arrow) a
-
-spotlight/flashlight tool that dims everything except a circle around your cursor and a text tool.
-
-* **Two screenshot options.** Capture the display or drag out just the region you want and send
-
-either one straight to the clipboard or to disk. With a camera-shutter sound.
+* **Two screenshot options.** Capture the display or drag out just the region you want and send either one straight to the clipboard or to disk. With a camera-shutter sound.
 
 * **Global undo/redo.** One history shared across every monitor.
 
-* **Unobtrusive design.** No Dock icon or app-switcher entry by default; toggle both back on whenever
+* **Unobtrusive design.** No Dock icon or app-switcher entry by default; toggle both back on whenever you want. Optional launch at login.
 
-you want. Optional launch at login.
-
-* **Customizable shortcuts.** Every action. Including drawing-tool selection. Has its keyboard
-
-shortcut, editable from Settings.
+* **Customizable shortcuts.** Every action. Including drawing-tool selection. Has its keyboard shortcut, editable from Settings.
 
 ## Requirements
 
@@ -61,7 +49,7 @@ shortcut, editable from Settings.
 
 ## First Launch: Permissions
 
-Drawzee needs two permissions:
+Tapink needs two permissions:
 
 | Permission | Why 
 |---|---|
@@ -72,15 +60,15 @@ Drawzee needs two permissions:
 
 ### The menu bar icon
 
-Drawzee sits in the menu bar. Click it for:
+Tapink sits in the menu bar. Click it for:
 
 * **Enable/Disable Drawing Mode**
 
 * **Settings…**
 
-* **About Drawzee**
+* **About Tapink**
 
-* **Quit Drawzee**
+* **Quit Tapink**
 
 ### Entering Draw Mode
 

@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import DrawzeeKit
+@testable import TapinkKit
 
 final class AppSettingsTests: XCTestCase {
     // Mirrors AppSettings' own (private) UserDefaults key names, since the enum
@@ -80,13 +80,13 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testSetBindingPostsShortcutsChangedNotification() {
-        let expectation = expectation(forNotification: .drawzeeShortcutsChanged, object: nil)
+        let expectation = expectation(forNotification: .tapinkShortcutsChanged, object: nil)
         AppSettings.shared.setBinding(ShortcutBinding(keyCode: 40, modifiers: []), for: .toolHighlighter)
         wait(for: [expectation], timeout: 1)
     }
 
     func testResetBindingPostsShortcutsChangedNotification() {
-        let expectation = expectation(forNotification: .drawzeeShortcutsChanged, object: nil)
+        let expectation = expectation(forNotification: .tapinkShortcutsChanged, object: nil)
         AppSettings.shared.resetBinding(for: .toolHighlighter)
         wait(for: [expectation], timeout: 1)
     }
@@ -112,15 +112,15 @@ final class AppSettingsTests: XCTestCase {
 
     // MARK: - Screenshot save folder
 
-    func testScreenshotSaveFolderPathDefaultsToPicturesDrawzee() {
+    func testScreenshotSaveFolderPathDefaultsToPicturesTapink() {
         UserDefaults.standard.removeObject(forKey: screenshotFolderKey)
         XCTAssertEqual(AppSettings.shared.screenshotSaveFolderPath, AppSettings.defaultScreenshotFolder)
-        XCTAssertTrue(AppSettings.defaultScreenshotFolder.hasSuffix("Pictures/Drawzee"))
+        XCTAssertTrue(AppSettings.defaultScreenshotFolder.hasSuffix("Pictures/Tapink"))
     }
 
     func testScreenshotSaveFolderPathRoundTrips() {
-        AppSettings.shared.screenshotSaveFolderPath = "/tmp/DrawzeeTestFolder"
-        XCTAssertEqual(AppSettings.shared.screenshotSaveFolderPath, "/tmp/DrawzeeTestFolder")
+        AppSettings.shared.screenshotSaveFolderPath = "/tmp/TapinkTestFolder"
+        XCTAssertEqual(AppSettings.shared.screenshotSaveFolderPath, "/tmp/TapinkTestFolder")
     }
 
     // MARK: - Hide from Dock / switcher

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BUILD_PATH=".build/output"
-APP_NAME="Drawzee"
+APP_NAME="Tapink"
 APP_BUNDLE="${APP_NAME}.app"
 DEST="/Applications/${APP_BUNDLE}"
 
@@ -21,5 +21,5 @@ fi
 rm -rf "${DEST}"
 cp -R "${BUILD_PATH}/${APP_BUNDLE}" "${DEST}"
 
-open "/Applications/Drawzee.app"
+open "/Applications/Tapink.app"
 echo "==> Installed and started."

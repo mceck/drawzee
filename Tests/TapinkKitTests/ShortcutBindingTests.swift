@@ -1,7 +1,7 @@
 import XCTest
 import AppKit
 import Carbon.HIToolbox
-@testable import DrawzeeKit
+@testable import TapinkKit
 
 final class ShortcutBindingTests: XCTestCase {
     func testEncodeDecodeRoundTrips() throws {

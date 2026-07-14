@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "Drawzee",
+    name: "Tapink",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Drawzee",
-            dependencies: ["DrawzeeKit"]
+            name: "Tapink",
+            dependencies: ["TapinkKit"]
         ),
         .target(
-            name: "DrawzeeKit"
+            name: "TapinkKit"
         ),
         .testTarget(
-            name: "DrawzeeKitTests",
-            dependencies: ["DrawzeeKit"]
+            name: "TapinkKitTests",
+            dependencies: ["TapinkKit"]
         ),
     ]
 )

@@ -1,5 +1,5 @@
 import XCTest
-@testable import DrawzeeKit
+@testable import TapinkKit
 
 final class ScreenshotServiceTests: XCTestCase {
     /// A region touching the bottom of the screen in AppKit's bottom-left-origin

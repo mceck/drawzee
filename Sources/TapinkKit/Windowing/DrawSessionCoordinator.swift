@@ -87,7 +87,7 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func enableDrawMode() {
         guard !isDrawModeActive else { return }
         // A `.nonactivatingPanel` can become key without showing a Dock icon or
-        // stealing Cmd-Tab visibility, but it still needs Drawzee to actually be
+        // stealing Cmd-Tab visibility, but it still needs Tapink to actually be
         // the active application to reliably receive real keyboard/mouse-moved
         // input — otherwise shortcuts, text entry, and the spotlight tool only
         // work sporadically depending on which app last held focus.
@@ -123,10 +123,10 @@ public final class DrawSessionCoordinator: ObservableObject {
         // NOT guarantee activation ("the framework does not guarantee that the
         // app will be activated at all" — AppKit header). The older, forceful
         // API reliably steals keyboard focus, which is exactly what's needed
-        // here for shortcuts/text-entry to actually reach Drawzee.
+        // here for shortcuts/text-entry to actually reach Tapink.
         NSApp.activate(ignoringOtherApps: true)
         toolbarController.show(on: DrawSessionCoordinator.screenUnderCursor() ?? NSScreen.main, revealed: !isSidebarHidden)
-        NSLog("Drawzee: enableDrawMode done, appActive=\(NSApp.isActive)")
+        NSLog("Tapink: enableDrawMode done, appActive=\(NSApp.isActive)")
     }
 
     public func disableDrawMode() {
@@ -269,7 +269,7 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func freezeBackground() {
         guard isDrawModeActive, !isBackgroundFrozen else { return }
         isBackgroundFrozen = true
-        // Exclude every one of Drawzee's own windows (toolbar + every overlay canvas) so the
+        // Exclude every one of Tapink's own windows (toolbar + every overlay canvas) so the
         // frozen backdrop is a clean shot of what's underneath — existing drawn objects stay
         // vector-only in `document` and keep replaying on top each frame, so undo/redo/clear
         // still work normally against a frozen background.

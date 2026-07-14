@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import DrawzeeKit
+@testable import TapinkKit
 
 final class ToolTests: XCTestCase {
     // MARK: - ShapeKind

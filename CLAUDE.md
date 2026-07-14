@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Drawzee is a native macOS menu-bar screen-annotation app: it lives in the tray,
+Tapink is a native macOS menu-bar screen-annotation app: it lives in the tray,
 and on activation shows a transparent overlay on top of the live screen (not a screenshot) that you can
 draw on, across every connected monitor. Swift Package Manager project, AppKit for all system-level
 pieces (status item, overlay windows, event monitoring), SwiftUI for the toolbar/Settings/About content.
@@ -14,17 +14,17 @@ Target: macOS 14 Sonoma+, unsandboxed, ad-hoc/personal-team signed (not distribu
 
 ```bash
 swift build                 # debug build, fast inner loop for compile-error checking
-swift test                   # runs Tests/DrawzeeKitTests (undo/redo, shortcut encode/decode)
+swift test                   # runs Tests/TapinkKitTests (undo/redo, shortcut encode/decode)
 swift test --filter DrawingDocumentTests            # run a single test case
 swift test --filter DrawingDocumentTests/testUndoRemovesLastObject   # run a single test method
 
-Scripts/build.sh             # release build -> assembles & codesigns Drawzee.app (see Build pipeline below)
-Scripts/install.sh           # copies the built Drawzee.app into /Applications
+Scripts/build.sh             # release build -> assembles & codesigns Tapink.app (see Build pipeline below)
+Scripts/install.sh           # copies the built Tapink.app into /Applications
 ```
 
-To actually run the app: `open .build/output/Drawzee.app` (after `Scripts/build.sh`) or
-`open /Applications/Drawzee.app` (after `Scripts/install.sh`). **Never run the raw binary directly**
-(`.build/*/Drawzee`) — an executable run outside a real `.app` bundle isn't registered with
+To actually run the app: `open .build/output/Tapink.app` (after `Scripts/build.sh`) or
+`open /Applications/Tapink.app` (after `Scripts/install.sh`). **Never run the raw binary directly**
+(`.build/*/Tapink`) — an executable run outside a real `.app` bundle isn't registered with
 LaunchServices, so it can't take real keyboard focus and the menu bar item misbehaves. This is also why
 there is no Xcode project in this repo: the app is built and iterated on entirely from the terminal by
 hand-assembling the bundle, rather than authoring a `.xcodeproj`.
@@ -39,9 +39,9 @@ that would otherwise fight strict Swift 6 concurrency checking.
 ## Architecture
 
 ### Module layout
-- `Sources/Drawzee` — thin executable target: `main.swift` bootstraps `NSApplication`, `AppDelegate.swift`
+- `Sources/Tapink` — thin executable target: `main.swift` bootstraps `NSApplication`, `AppDelegate.swift`
   wires the permission dance and instantiates the pieces below. Almost no logic lives here.
-- `Sources/DrawzeeKit` — a library target with everything else, structured by concern
+- `Sources/TapinkKit` — a library target with everything else, structured by concern
   (`Model/`, `Windowing/`, `Hotkeys/`, `Screenshot/`, `Settings/`, `MenuBar/`, `UI/`), unit-testable in
   isolation from any GUI/bundle context.
 
@@ -102,7 +102,7 @@ cursor just left.
 
 ### Hotkeys — two tiers, on purpose
 `Hotkeys/HotkeyManager.swift`: a persistent **global** monitor (`NSEvent.addGlobalMonitorForEvents`)
-handles only draw-mode activation, since it must fire even with no Drawzee window yet (requires
+handles only draw-mode activation, since it must fire even with no Tapink window yet (requires
 Accessibility trust; can't consume the event, but that's fine since the default ⌥Tab binding has no OS
 meaning). A **local** monitor (`NSEvent.addLocalMonitorForEvents`) handles every other shortcut
 (Esc/undo/redo/screenshot/tool-select/hide-canvas) only while draw mode is active, returning `nil` to
@@ -150,7 +150,7 @@ which always mean copy/save respectively regardless of it.
 ### Settings & login item
 `Settings/AppSettings.swift` wraps `UserDefaults` (hide-from-dock flag, screenshot folder, shortcut
 overrides). `Settings/LoginItemManager.swift` wraps `SMAppService.mainApp` — this only works reliably when
-Drawzee runs from a stable path, hence `Scripts/install.sh` copying to `/Applications`. Hide-from-Dock is
+Tapink runs from a stable path, hence `Scripts/install.sh` copying to `/Applications`. Hide-from-Dock is
 a live-toggleable `NSApp.setActivationPolicy(.accessory/.regular)` on top of the static `LSUIElement=true`
 baseline in `Info.plist` (see `AppDelegate.applicationWillFinishLaunching`/`applicationDidFinishLaunching`
 for the two-step dance that avoids a Dock-icon flash on launch).

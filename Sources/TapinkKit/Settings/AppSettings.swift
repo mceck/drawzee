@@ -48,7 +48,7 @@ public final class AppSettings {
     }
 
     public static var defaultScreenshotFolder: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent("Pictures/Drawzee")
+        (NSHomeDirectory() as NSString).appendingPathComponent("Pictures/Tapink")
     }
 
     public var screenshotSaveFolderPath: String {
@@ -132,16 +132,16 @@ public final class AppSettings {
     public func setBinding(_ binding: ShortcutBinding, for action: ShortcutAction) {
         overrides[action.rawValue] = binding
         saveShortcutOverrides()
-        NotificationCenter.default.post(name: .drawzeeShortcutsChanged, object: nil)
+        NotificationCenter.default.post(name: .tapinkShortcutsChanged, object: nil)
     }
 
     public func resetBinding(for action: ShortcutAction) {
         overrides.removeValue(forKey: action.rawValue)
         saveShortcutOverrides()
-        NotificationCenter.default.post(name: .drawzeeShortcutsChanged, object: nil)
+        NotificationCenter.default.post(name: .tapinkShortcutsChanged, object: nil)
     }
 }
 
 public extension Notification.Name {
-    static let drawzeeShortcutsChanged = Notification.Name("drawzeeShortcutsChanged")
+    static let tapinkShortcutsChanged = Notification.Name("tapinkShortcutsChanged")
 }

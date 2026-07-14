@@ -31,14 +31,14 @@ public final class StatusItemController: NSObject {
     // (which delivers on the next run-loop pass) owns every update after that.
     private func configureButton() {
         guard let button = statusItem.button else { return }
-        let image = NSImage(systemSymbolName: "scribble.variable", accessibilityDescription: "Drawzee")
+        let image = NSImage(systemSymbolName: "scribble.variable", accessibilityDescription: "Tapink")
         image?.isTemplate = true
         button.image = image
     }
 
     private func updateIcon(active: Bool, color: NSColor) {
         guard let button = statusItem.button else { return }
-        let image = NSImage(systemSymbolName: "scribble.variable", accessibilityDescription: "Drawzee")
+        let image = NSImage(systemSymbolName: "scribble.variable", accessibilityDescription: "Tapink")
         if active {
             // While drawing, tint the icon with the current tool color. The
             // image must stop being a template, or the system re-renders it
@@ -64,12 +64,12 @@ public final class StatusItemController: NSObject {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let aboutItem = NSMenuItem(title: "About Drawzee", action: #selector(openAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Tapink", action: #selector(openAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Drawzee", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Tapink", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
