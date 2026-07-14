@@ -9,6 +9,8 @@ public enum ShortcutAction: String, Codable, CaseIterable {
     case copyScreenshot
     case saveScreenshot
     case regionScreenshot
+    case recordScreen
+    case regionRecording
     case freezeBackground
     case clearCanvas
     case undo
@@ -40,6 +42,8 @@ public enum ShortcutAction: String, Codable, CaseIterable {
         case .copyScreenshot: return "Copy Screenshot"
         case .saveScreenshot: return "Save Screenshot"
         case .regionScreenshot: return "Selected Area Screenshot"
+        case .recordScreen: return "Record Screen"
+        case .regionRecording: return "Selected Area Recording"
         case .freezeBackground: return "Freeze Background"
         case .clearCanvas: return "Clear Canvas"
         case .undo: return "Undo"

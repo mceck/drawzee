@@ -43,6 +43,11 @@ public final class CanvasView: NSView {
     private var regionSelectionStart: CGPoint?
     private var regionSelectionCurrent: CGPoint?
 
+    /// The region currently being recorded on this screen, if any — kept on screen for the
+    /// whole recording (unlike `regionSelectionStart`/`Current` above, which only exist during
+    /// the initial drag). `nil` outside of an active region recording.
+    private var activeRecordingFrame: CGRect?
+
     private var tool: ToolState { toolProvider?() ?? ToolState() }
 
     public override init(frame frameRect: NSRect) {
@@ -117,6 +122,15 @@ public final class CanvasView: NSView {
             NSCursor.arrow.set()
         }
         window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    // MARK: - Region recording frame
+
+    /// Shows (or clears, passing `nil`) a persistent border around the region being recorded.
+    /// `rect` is in this view's own local coordinates, same as `onRegionSelected`'s rect.
+    func setActiveRecordingFrame(_ rect: CGRect?) {
+        activeRecordingFrame = rect
         needsDisplay = true
     }
 
@@ -436,6 +450,10 @@ public final class CanvasView: NSView {
             drawRegionSelectionOverlay()
         }
 
+        if let activeRecordingFrame {
+            drawActiveRecordingFrameOverlay(activeRecordingFrame)
+        }
+
         if isMarqueeSelecting {
             drawMarqueeSelection()
         }
@@ -614,6 +632,29 @@ public final class CanvasView: NSView {
         let border = NSBezierPath(rect: rect)
         border.lineWidth = 1.5
         NSColor.white.setStroke()
+        border.stroke()
+    }
+
+    /// Marks the region currently being recorded by dimming everything outside it — the same
+    /// treatment `drawRegionSelectionOverlay` uses while dragging out the initial selection, so
+    /// the recording indicator reads as a continuation of that same gesture rather than a new
+    /// visual language. A flat fill with a crisp edge exactly on `rect`'s boundary can't leak into
+    /// the recording no matter how precise the crop is — unlike a blurred glow, there's no soft
+    /// falloff that could spread past the line, so nothing needs to be inset or clipped: the
+    /// evenodd fill's "hole" simply never paints a single pixel inside `rect`.
+    private func drawActiveRecordingFrameOverlay(_ rect: CGRect) {
+        let dim = NSBezierPath(rect: bounds)
+        dim.append(NSBezierPath(rect: rect))
+        dim.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.3).setFill()
+        dim.fill()
+
+        // Outset from `rect`, never centered on its edge: a stroke centered exactly on the crop
+        // boundary would put half its width inside the recorded pixels. Offsetting it clear keeps
+        // the frame purely cosmetic, the same way the earlier glow version stayed outside the crop.
+        let border = NSBezierPath(rect: rect.insetBy(dx: -2, dy: -2))
+        border.lineWidth = 1.5
+        NSColor.white.withAlphaComponent(0.6).setStroke()
         border.stroke()
     }
 

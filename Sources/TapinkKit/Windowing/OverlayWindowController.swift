@@ -53,7 +53,7 @@ public final class OverlayWindowController: NSObject {
         canvas.onTextEditingBegin = { [weak coordinator] in coordinator?.beginTextEditing() }
         canvas.onTextEditingEnd = { [weak coordinator] in coordinator?.endTextEditing() }
         canvas.onRegionSelected = { [weak coordinator, screenID] rect in
-            coordinator?.completeRegionScreenshot(screenID: screenID, rectInPoints: rect)
+            coordinator?.completeRegionSelection(screenID: screenID, rectInPoints: rect)
         }
 
         cancellable = coordinator.$toolState
@@ -90,6 +90,10 @@ public final class OverlayWindowController: NSObject {
 
     public func setRegionSelectionActive(_ active: Bool) {
         canvasView.setRegionSelectionActive(active)
+    }
+
+    public func setActiveRecordingFrame(_ rect: CGRect?) {
+        canvasView.setActiveRecordingFrame(rect)
     }
 
     public func setFrozenBackground(_ image: NSImage?) {

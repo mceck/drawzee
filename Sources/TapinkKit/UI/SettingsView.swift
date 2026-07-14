@@ -16,7 +16,7 @@ struct SettingsView: View {
                 )
                 PermissionRow(
                     title: "Screen Recording",
-                    detail: "Required to capture screenshots.",
+                    detail: "Required to capture screenshots and recordings.",
                     isGranted: permissions.isScreenRecordingGranted,
                     grant: permissions.requestScreenRecording
                 )
@@ -37,7 +37,7 @@ struct SettingsView: View {
                 }
                 Toggle("Start draw mode with sidebar hidden", isOn: $model.startWithSidebarHidden)
             }
-            Section("Screenshots") {
+            Section("Screenshots & Recordings") {
                 HStack {
                     Text(model.screenshotFolder)
                         .lineLimit(1)
@@ -51,6 +51,7 @@ struct SettingsView: View {
                         Text(destination.displayName).tag(destination)
                     }
                 }
+                Toggle("Show cursor in recordings", isOn: $model.recordCursorInVideos)
             }
             Section("Shortcuts") {
                 ForEach(ShortcutAction.allCases, id: \.self) { action in
@@ -107,6 +108,9 @@ final class SettingsViewModel: ObservableObject {
     @Published var startWithSidebarHidden: Bool {
         didSet { AppSettings.shared.startDrawModeWithSidebarHidden = startWithSidebarHidden }
     }
+    @Published var recordCursorInVideos: Bool {
+        didSet { AppSettings.shared.recordCursorInVideos = recordCursorInVideos }
+    }
 
     init() {
         startAtLogin = LoginItemManager.shared.isEnabled
@@ -115,6 +119,7 @@ final class SettingsViewModel: ObservableObject {
         regionScreenshotDestination = AppSettings.shared.regionScreenshotDestination
         autofadeDelay = AppSettings.shared.autofadeDelaySeconds
         startWithSidebarHidden = AppSettings.shared.startDrawModeWithSidebarHidden
+        recordCursorInVideos = AppSettings.shared.recordCursorInVideos
     }
 
     func chooseFolder() {

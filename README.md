@@ -35,6 +35,8 @@ or run this: `xattr -cr /Applications/Tapink.app`
 
 * **Two screenshot options.** Capture the display or drag out just the region you want and send either one straight to the clipboard or to disk. With a camera-shutter sound.
 
+* **Screen recording, too.** Record the full display or just a selected region, saved as a video right next to your screenshots.
+
 * **Global undo/redo.** One history shared across every monitor.
 
 * **Unobtrusive design.** No Dock icon or app-switcher entry by default; toggle both back on whenever you want. Optional launch at login.
@@ -54,7 +56,7 @@ Tapink needs two permissions:
 | Permission | Why 
 |---|---|
 | System Settings → Privacy & Security → Accessibility | **Accessibility** For the ⌥Tab shortcut |
-| System Settings → Privacy & Security → Screen Recording | **Screen Recording** For screenshots |
+| System Settings → Privacy & Security → Screen Recording | **Screen Recording** For screenshots and recordings |
 
 ## Usage
 
@@ -90,7 +92,19 @@ Draw on every display at once. The toolbar appears on one screen at a time.
 
 **Selected area:**
 
-Click the camera button or press **⌘⇧A**; drag out the region.
+Click the camera dropdown or press **⌘⇧A**; drag out the region.
+
+### Recording the screen
+
+The camera button in the toolbar is a dropdown with four options: Screenshot Screen, Screenshot Area,
+Record Screen, Record Area. Recordings save as `.mov` files in the same folder as your screenshots.
+
+**Full screen:** press **⌘⇧R** to start, press it again to stop.
+
+**Selected area:** press **⌘⌥R**, drag out the region to start recording it; press **⌘⌥R** again to stop.
+
+Only one recording can run at a time. Leaving Draw Mode while recording finishes and saves the file
+automatically. The mouse cursor is included in recordings by default (toggle it off in Settings).
 
 ### Undo, redo and clearing
 
@@ -110,6 +124,8 @@ Open, via the menu bar icon → **Settings…**:
 
 * **Selected-area screenshots go to**
 
+* **Show cursor in recordings**
+
 * **Start draw mode with sidebar hidden**
 
 * **Shortcuts**
@@ -123,6 +139,8 @@ Action | Default |
 | Copy Screenshot | ⌘C |
 | Save Screenshot | ⌘S |
 | Selected-Area Screenshot | ⌘⇧A |
+| Record Screen | ⌘⇧R |
+| Selected-Area Recording | ⌘⌥R |
 | Freeze Background | L |
 | Clear Canvas | Delete |
 | Undo | ⌘Z |

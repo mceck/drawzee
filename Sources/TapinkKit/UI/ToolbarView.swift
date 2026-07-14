@@ -34,12 +34,7 @@ struct ToolbarView: View {
                         .fill(Color.white.opacity(0.15))
                         .frame(width: 26, height: 1)
 
-                    Button {
-                        coordinator.beginRegionScreenshotSelection()
-                    } label: {
-                        iconLabel(systemName: "camera.fill", selected: coordinator.isSelectingRegion)
-                    }
-                    .buttonStyle(.plain)
+                    captureButton
                     Button {
                         coordinator.toggleFreezeBackground()
                     } label: {
@@ -53,7 +48,7 @@ struct ToolbarView: View {
                     }
                     .buttonStyle(.plain)
                     actionButton(systemName: "trash.fill") {
-                        coordinator.document.clear()
+                        coordinator.clearCanvas()
                     }
                 }
                 .transition(.opacity)
@@ -122,15 +117,9 @@ struct ToolbarView: View {
     // the collapsed-sidebar indicator always matches what the expanded tool
     // row would highlight.
     private var selectedToolSystemName: String {
-        switch coordinator.toolState.selectedTool {
-        case .pen: return "pencil.tip"
-        case .highlighter: return "paintbrush.pointed.fill"
-        case .shape: return coordinator.toolState.selectedShape.symbolName
-        case .spotlight: return "flashlight.on.fill"
-        case .text: return "textformat"
-        case .move: return "cursorarrow"
-        case .eraser: return "eraser"
-        }
+        coordinator.toolState.selectedTool == .shape
+            ? coordinator.toolState.selectedShape.symbolName
+            : coordinator.toolState.selectedTool.symbolName
     }
 
     private var collapsedToolIndicator: some View {
@@ -206,6 +195,48 @@ struct ToolbarView: View {
         .background(coordinator.toolState.selectedTool == .shape ? Color.accentColor : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .contentShape(Rectangle())
+    }
+
+    /// While nothing is recording: a dropdown covering all four capture actions (two screenshot
+    /// flavors, two recording flavors), mirroring `shapeButton`'s `Menu`-as-button styling. Once
+    /// a recording is running, this swaps to a plain stop button — no dropdown to navigate,
+    /// tinted red so it reads as "recording" at a glance instead of the usual accent blue.
+    @ViewBuilder
+    private var captureButton: some View {
+        if coordinator.activeRecordingKind != nil {
+            Button {
+                coordinator.stopRecording()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color.red)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        } else {
+            Menu {
+                Button("Screenshot Screen") { coordinator.captureScreenshot(saveToDisk: false) }
+                Button("Screenshot Area") { coordinator.beginRegionScreenshotSelection() }
+                Divider()
+                Button("Record Screen") { coordinator.toggleScreenRecording() }
+                Button("Record Area") { coordinator.toggleRegionRecording() }
+            } label: {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 32, height: 32)
+            .background(coordinator.isSelectingRegion ? Color.accentColor : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
+        }
     }
 
     private func toolButton(_ tool: DrawingTool, systemName: String) -> some View {

@@ -2,6 +2,14 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// Which flavor of screen recording is currently in flight, or `nil` if none is. Only one
+/// recording can be active at a time (see `DrawSessionCoordinator.toggleScreenRecording()` /
+/// `beginRegionRecordingSelection()`).
+public enum RecordingKind {
+    case screen
+    case region
+}
+
 /// Owns the drawing session end-to-end: one overlay per screen, the single
 /// draggable toolbar, the shared document, and the currently selected tool.
 /// This is the one place that decides which panel is key and how draw mode's
@@ -18,16 +26,38 @@ public final class DrawSessionCoordinator: ObservableObject {
     @Published public private(set) var isSelectingRegion = false
     @Published public private(set) var isBackgroundFrozen = false
     @Published public private(set) var isAutofadeEnabled = false
+    @Published public private(set) var activeRecordingKind: RecordingKind?
     public private(set) var isEditingText = false
+
+    /// What a completed region drag-select is *for* — the same crosshair selection flow
+    /// (`isSelectingRegion`, `CanvasView.setRegionSelectionActive`) is shared by region
+    /// screenshots and region recordings, so this records which one to actually perform once
+    /// the drag finishes.
+    private enum RegionSelectionPurpose {
+        case screenshot
+        case recording
+    }
+    private var pendingRegionPurpose: RegionSelectionPurpose = .screenshot
 
     public let document = DrawingDocument()
     private lazy var autofade = AutofadeController(document: document)
 
     private var overlayControllers: [OverlayWindowController] = []
     private let toolbarController = ToolbarPanelController()
+    private let toastController = ToastPanelController()
     private var screenObserver: NSObjectProtocol?
     private var previouslyActiveApp: NSRunningApplication?
     private var toolBeforeSpotlight: DrawingTool?
+    /// Which screen currently shows the persistent region-recording frame overlay (see
+    /// `CanvasView.setActiveRecordingFrame`), so `stopRecording()` knows where to clear it.
+    private var activeRegionRecordingScreenID: ScreenID?
+
+    /// Every Tapink-owned window that must never itself appear in a screenshot or recording —
+    /// the toolbar and the toast HUD. `freezeBackground()` additionally excludes the overlay
+    /// canvases themselves (see there).
+    private var excludedCaptureWindowNumbers: [Int] {
+        [toolbarController.windowNumber, toastController.windowNumber]
+    }
 
     public init() {
         toolbarController.coordinator = self
@@ -126,11 +156,16 @@ public final class DrawSessionCoordinator: ObservableObject {
         // here for shortcuts/text-entry to actually reach Tapink.
         NSApp.activate(ignoringOtherApps: true)
         toolbarController.show(on: DrawSessionCoordinator.screenUnderCursor() ?? NSScreen.main, revealed: !isSidebarHidden)
+        showToast("Draw Mode On", systemImage: "pencil.tip")
         NSLog("Tapink: enableDrawMode done, appActive=\(NSApp.isActive)")
     }
 
     public func disableDrawMode() {
         guard isDrawModeActive else { return }
+        showToast("Draw Mode Off", systemImage: "pencil.slash")
+        // Otherwise leaving draw mode (Esc, re-toggling the activation shortcut, etc.) would
+        // abandon an in-progress recording with its asset writer never finalized.
+        stopRecording()
         isDrawModeActive = false
         // Anything still waiting to fade (or mid-erase) was already promised to
         // disappear; finish the erase now rather than resurrecting it whole the
@@ -197,6 +232,7 @@ public final class DrawSessionCoordinator: ObservableObject {
         if tool == .spotlight, toolState.selectedTool == .spotlight {
             toolState.selectedTool = toolBeforeSpotlight ?? .pen
             toolBeforeSpotlight = nil
+            announceCurrentTool()
             return
         }
         if tool == .spotlight {
@@ -205,7 +241,9 @@ public final class DrawSessionCoordinator: ObservableObject {
         if toolState.selectedTool == .move, tool != .move {
             overlayControllers.forEach { $0.canvasView.clearSelection() }
         }
+        guard toolState.selectedTool != tool else { return }
         toolState.selectedTool = tool
+        announceCurrentTool()
     }
 
     public func setColor(_ color: NSColor) {
@@ -219,8 +257,33 @@ public final class DrawSessionCoordinator: ObservableObject {
     }
 
     public func setShape(_ shape: ShapeKind) {
+        let changed = toolState.selectedShape != shape || toolState.selectedTool != .shape
         toolState.selectedShape = shape
         toolState.selectedTool = .shape
+        if changed { announceCurrentTool() }
+    }
+
+    // MARK: - Toast feedback
+
+    /// Brief HUD feedback for draw-mode toggling and tool changes, shown on whichever screen
+    /// currently hosts the toolbar. Excluded from screenshots/recordings via
+    /// `excludedCaptureWindowNumbers`.
+    private func showToast(_ message: String, systemImage: String) {
+        toastController.show(message: message, systemImage: systemImage, on: toolbarController.currentScreen)
+    }
+
+    /// `.shape` announces the specific selected shape (e.g. "Rectangle"), not a generic "Shape"
+    /// — that's the actually-useful information when the shape tool is (re)selected. Spotlight is
+    /// deliberately silent: it's toggled far more often/rapidly than other tools (mouse-driven,
+    /// on-off-on in quick succession while pointing things out), so a toast for it would be more
+    /// noise than signal.
+    private func announceCurrentTool() {
+        guard toolState.selectedTool != .spotlight else { return }
+        if toolState.selectedTool == .shape {
+            showToast(toolState.selectedShape.displayName, systemImage: toolState.selectedShape.symbolName)
+        } else {
+            showToast(toolState.selectedTool.displayName, systemImage: toolState.selectedTool.symbolName)
+        }
     }
 
     // MARK: - Auto-fade
@@ -237,6 +300,7 @@ public final class DrawSessionCoordinator: ObservableObject {
             document.clear()
         }
         autofade.setEnabled(isAutofadeEnabled)
+        showToast(isAutofadeEnabled ? "Auto-Fade On" : "Auto-Fade Off", systemImage: "timer")
     }
 
     /// Render-time query for canvases: erase progress in 0...1 for an object
@@ -262,8 +326,21 @@ public final class DrawSessionCoordinator: ObservableObject {
 
     // MARK: - Freeze background
 
+    /// The only place a freeze/unfreeze toast is shown — `freezeBackground()`/`unfreezeBackground()`
+    /// are also called internally as a state reset (e.g. `enableDrawMode()`/`disableDrawMode()`
+    /// unfreezing on the way in/out), which shouldn't announce anything.
     public func toggleFreezeBackground() {
-        isBackgroundFrozen ? unfreezeBackground() : freezeBackground()
+        if isBackgroundFrozen {
+            unfreezeBackground()
+            showToast("Background Unfrozen", systemImage: "snowflake")
+        } else {
+            freezeBackground()
+            // `freezeBackground()` no-ops (via its own guard) when draw mode isn't active;
+            // only announce it if it actually took effect.
+            if isBackgroundFrozen {
+                showToast("Background Frozen", systemImage: "snowflake")
+            }
+        }
     }
 
     public func freezeBackground() {
@@ -273,7 +350,7 @@ public final class DrawSessionCoordinator: ObservableObject {
         // frozen backdrop is a clean shot of what's underneath — existing drawn objects stay
         // vector-only in `document` and keep replaying on top each frame, so undo/redo/clear
         // still work normally against a frozen background.
-        let excludedWindowNumbers = [toolbarController.windowNumber] + overlayControllers.map(\.windowNumber)
+        let excludedWindowNumbers = excludedCaptureWindowNumbers + overlayControllers.map(\.windowNumber)
         let controllers = overlayControllers
         Task { @MainActor in
             for controller in controllers {
@@ -302,13 +379,19 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func captureScreenshot(saveToDisk: Bool) {
         guard let screen = DrawSessionCoordinator.screenUnderCursor() ?? NSScreen.main,
               let displayID = screen.displayID else { return }
-        let excludedWindowNumbers = [toolbarController.windowNumber]
-        Task {
-            await ScreenshotService.shared.capture(
+        let excludedWindowNumbers = excludedCaptureWindowNumbers
+        // `@MainActor` here matters, not just style: without it, resuming after the `await`
+        // below isn't guaranteed to land back on the main thread, and `showToast` touches
+        // AppKit windows — this was the exact cause of a crash before it was added.
+        Task { @MainActor in
+            let captured = await ScreenshotService.shared.capture(
                 displayID: displayID,
                 excludingWindowNumbers: excludedWindowNumbers,
                 saveToDisk: saveToDisk
             )
+            if captured {
+                showToast(saveToDisk ? "Screenshot Saved" : "Screenshot Copied", systemImage: "camera.fill")
+            }
         }
     }
 
@@ -320,6 +403,7 @@ public final class DrawSessionCoordinator: ObservableObject {
     /// is made (or cancelled).
     public func beginRegionScreenshotSelection() {
         guard isDrawModeActive, !isSelectingRegion else { return }
+        pendingRegionPurpose = .screenshot
         isSelectingRegion = true
         overlayControllers.forEach { $0.setRegionSelectionActive(true) }
     }
@@ -327,27 +411,122 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func cancelRegionSelection() {
         guard isSelectingRegion else { return }
         isSelectingRegion = false
+        pendingRegionPurpose = .screenshot
         overlayControllers.forEach { $0.setRegionSelectionActive(false) }
     }
 
     /// Called by whichever screen's `CanvasView` the drag actually happened on.
     /// `rectInPoints` is in that screen's own view-local coordinates (origin at
     /// its bottom-left, matching `NSScreen.frame`'s size), which is exactly what
-    /// `ScreenshotService` needs to convert into a pixel crop rect.
-    func completeRegionScreenshot(screenID: ScreenID, rectInPoints: CGRect) {
+    /// `ScreenshotService`/`ScreenRecordingService` need to convert into their own
+    /// coordinate spaces. Which action actually runs depends on `pendingRegionPurpose` —
+    /// the same crosshair drag-select flow is shared by region screenshots and recordings.
+    func completeRegionSelection(screenID: ScreenID, rectInPoints: CGRect) {
         isSelectingRegion = false
         overlayControllers.forEach { $0.setRegionSelectionActive(false) }
+        switch pendingRegionPurpose {
+        case .screenshot:
+            captureRegionScreenshot(screenID: screenID, rectInPoints: rectInPoints)
+        case .recording:
+            startRegionRecording(screenID: screenID, rectInPoints: rectInPoints)
+        }
+    }
+
+    private func captureRegionScreenshot(screenID: ScreenID, rectInPoints: CGRect) {
         guard let screen = NSScreen.screens.first(where: { $0.displayID == screenID }) else { return }
-        let excludedWindowNumbers = [toolbarController.windowNumber]
+        let excludedWindowNumbers = excludedCaptureWindowNumbers
         let saveToDisk = AppSettings.shared.regionScreenshotDestination == .file
-        Task {
-            await ScreenshotService.shared.captureRegion(
+        Task { @MainActor in
+            let captured = await ScreenshotService.shared.captureRegion(
                 displayID: screenID,
                 regionInPoints: rectInPoints,
                 scale: screen.backingScaleFactor,
                 excludingWindowNumbers: excludedWindowNumbers,
                 saveToDisk: saveToDisk
             )
+            if captured {
+                showToast(saveToDisk ? "Screenshot Saved" : "Screenshot Copied", systemImage: "camera.fill")
+            }
+        }
+    }
+
+    // MARK: - Screen recording
+
+    /// Starts or stops a full-screen recording of whichever screen is under the cursor. Only one
+    /// recording (full-screen or region) can be active at a time.
+    public func toggleScreenRecording() {
+        if activeRecordingKind != nil {
+            stopRecording()
+            return
+        }
+        guard let screen = DrawSessionCoordinator.screenUnderCursor() ?? NSScreen.main,
+              let displayID = screen.displayID else { return }
+        let excludedWindowNumbers = excludedCaptureWindowNumbers
+        activeRecordingKind = .screen
+        Task { @MainActor in
+            let started = await ScreenRecordingService.shared.startFullScreen(
+                displayID: displayID,
+                excludingWindowNumbers: excludedWindowNumbers
+            )
+            if !started { activeRecordingKind = nil }
+        }
+    }
+
+    /// Puts every screen's canvas into the same crosshair drag-to-select mode used for region
+    /// screenshots; once a rect is picked, `completeRegionSelection` routes it here instead.
+    public func beginRegionRecordingSelection() {
+        guard isDrawModeActive, !isSelectingRegion, activeRecordingKind == nil else { return }
+        pendingRegionPurpose = .recording
+        isSelectingRegion = true
+        overlayControllers.forEach { $0.setRegionSelectionActive(true) }
+    }
+
+    /// Starts a region-recording selection, or stops the current one if a region recording is
+    /// already in progress — the region counterpart to `toggleScreenRecording()`.
+    public func toggleRegionRecording() {
+        if activeRecordingKind == .region {
+            stopRecording()
+        } else {
+            beginRegionRecordingSelection()
+        }
+    }
+
+    private func startRegionRecording(screenID: ScreenID, rectInPoints: CGRect) {
+        guard let screen = NSScreen.screens.first(where: { $0.displayID == screenID }) else { return }
+        let excludedWindowNumbers = excludedCaptureWindowNumbers
+        activeRecordingKind = .region
+        activeRegionRecordingScreenID = screenID
+        // Kept on screen for the whole recording (unlike the transient drag-select overlay),
+        // so the user can see exactly what's being captured — see `CanvasView
+        // .setActiveRecordingFrame`'s doc comment for why it's drawn outside the crop rect.
+        overlayControllers.first(where: { $0.screenID == screenID })?.setActiveRecordingFrame(rectInPoints)
+        Task { @MainActor in
+            let started = await ScreenRecordingService.shared.startRegion(
+                displayID: screenID,
+                regionInPoints: rectInPoints,
+                screenHeightInPoints: screen.frame.height,
+                scale: screen.backingScaleFactor,
+                excludingWindowNumbers: excludedWindowNumbers
+            )
+            if !started {
+                activeRecordingKind = nil
+                activeRegionRecordingScreenID = nil
+                overlayControllers.first(where: { $0.screenID == screenID })?.setActiveRecordingFrame(nil)
+            }
+        }
+    }
+
+    /// Stops whichever recording (screen or region) is currently active. No-op if none is.
+    public func stopRecording() {
+        guard activeRecordingKind != nil else { return }
+        activeRecordingKind = nil
+        if let screenID = activeRegionRecordingScreenID {
+            overlayControllers.first(where: { $0.screenID == screenID })?.setActiveRecordingFrame(nil)
+            activeRegionRecordingScreenID = nil
+        }
+        Task { @MainActor in
+            await ScreenRecordingService.shared.stop()
+            showToast("Recording Saved", systemImage: "video.fill")
         }
     }
 
@@ -361,7 +540,16 @@ public final class DrawSessionCoordinator: ObservableObject {
             for id in ids { document.remove(id: id) }
             overlayControllers.forEach { $0.canvasView.clearSelection() }
         } else {
-            document.clear()
+            clearCanvas()
         }
+    }
+
+    /// Wipes every drawn object and announces it. Used by the trash button directly, and by
+    /// `deleteSelected()` when nothing is selected (Delete with an empty selection means "clear
+    /// everything"). Deleting a specific selection doesn't go through here — that's a much more
+    /// targeted action than "clear the canvas" and doesn't need the same announcement.
+    public func clearCanvas() {
+        document.clear()
+        showToast("Canvas Cleared", systemImage: "trash.fill")
     }
 }

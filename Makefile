@@ -1,7 +1,10 @@
-.PHONY: build install dmg reset-permissions clean
+.PHONY: build install dmg reset-permissions clean test
 
 build:
 	Scripts/build.sh
+
+test:
+	swift test
 
 install: build
 	Scripts/install.sh

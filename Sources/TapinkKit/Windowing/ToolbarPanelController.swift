@@ -113,4 +113,8 @@ public final class ToolbarPanelController: NSObject {
     }
 
     public var windowNumber: Int { panel.windowNumber }
+
+    /// Whichever screen the toolbar is currently positioned on (it can be dragged between
+    /// monitors), used to place the toast HUD alongside it.
+    public var currentScreen: NSScreen? { panel.screen }
 }

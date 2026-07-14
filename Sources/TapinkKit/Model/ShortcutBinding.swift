@@ -64,6 +64,8 @@ extension ShortcutBinding {
         .copyScreenshot: ShortcutBinding(keyCode: UInt16(kVK_ANSI_C), modifiers: [.command]),
         .saveScreenshot: ShortcutBinding(keyCode: UInt16(kVK_ANSI_S), modifiers: [.command]),
         .regionScreenshot: ShortcutBinding(keyCode: UInt16(kVK_ANSI_A), modifiers: [.command, .shift]),
+        .recordScreen: ShortcutBinding(keyCode: UInt16(kVK_ANSI_R), modifiers: [.command, .shift]),
+        .regionRecording: ShortcutBinding(keyCode: UInt16(kVK_ANSI_R), modifiers: [.command, .option]),
         .freezeBackground: ShortcutBinding(keyCode: UInt16(kVK_ANSI_L), modifiers: []),
         .clearCanvas: ShortcutBinding(keyCode: UInt16(kVK_Delete), modifiers: []),
         .undo: ShortcutBinding(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command]),

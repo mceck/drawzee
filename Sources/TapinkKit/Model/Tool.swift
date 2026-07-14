@@ -33,6 +33,33 @@ public enum DrawingTool: String, Codable, CaseIterable {
     case text
     case move
     case eraser
+
+    public var displayName: String {
+        switch self {
+        case .pen: return "Pen"
+        case .highlighter: return "Highlighter"
+        case .shape: return "Shape"
+        case .spotlight: return "Spotlight"
+        case .text: return "Text"
+        case .move: return "Move"
+        case .eraser: return "Eraser"
+        }
+    }
+
+    /// For `.shape`, callers should prefer `ToolState.selectedShape.symbolName` — the shape
+    /// tool's icon is whichever shape is currently selected, not a generic one. This case's
+    /// value is just a sensible fallback for callers that don't special-case it.
+    public var symbolName: String {
+        switch self {
+        case .pen: return "pencil.tip"
+        case .highlighter: return "paintbrush.pointed.fill"
+        case .shape: return "square.on.circle"
+        case .spotlight: return "flashlight.on.fill"
+        case .text: return "textformat"
+        case .move: return "cursorarrow"
+        case .eraser: return "eraser"
+        }
+    }
 }
 
 public struct ToolState {

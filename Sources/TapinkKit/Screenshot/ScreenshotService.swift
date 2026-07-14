@@ -11,34 +11,40 @@ public final class ScreenshotService {
     /// Captures exactly one display (the one under the cursor at the moment the
     /// shortcut fired), excluding only the given windows (the toolbar) so the
     /// live annotations baked into the per-screen canvas are still captured.
+    /// Returns whether a screenshot was actually taken, so callers (a toast, e.g.) don't
+    /// report success when permission was missing or the capture otherwise failed.
     @MainActor
-    public func capture(displayID: ScreenID, excludingWindowNumbers: [Int], saveToDisk: Bool) async {
-        guard let cgImage = await captureDisplayImage(displayID: displayID, excludingWindowNumbers: excludingWindowNumbers) else { return }
+    @discardableResult
+    public func capture(displayID: ScreenID, excludingWindowNumbers: [Int], saveToDisk: Bool) async -> Bool {
+        guard let cgImage = await captureDisplayImage(displayID: displayID, excludingWindowNumbers: excludingWindowNumbers) else { return false }
         playShutterSound()
         deliver(NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height)), saveToDisk: saveToDisk)
+        return true
     }
 
     /// Captures the same way as `capture`, then crops to `regionInPoints` —
     /// given in the screen's own view-local coordinates (origin at its
     /// bottom-left, matching `CanvasView.bounds`) — before delivering it.
     @MainActor
+    @discardableResult
     public func captureRegion(
         displayID: ScreenID,
         regionInPoints: CGRect,
         scale: CGFloat,
         excludingWindowNumbers: [Int],
         saveToDisk: Bool
-    ) async {
-        guard let cgImage = await captureDisplayImage(displayID: displayID, excludingWindowNumbers: excludingWindowNumbers) else { return }
+    ) async -> Bool {
+        guard let cgImage = await captureDisplayImage(displayID: displayID, excludingWindowNumbers: excludingWindowNumbers) else { return false }
 
         let pixelRect = ScreenshotService.pixelRect(forRegionInPoints: regionInPoints, imageHeightInPixels: cgImage.height, scale: scale)
 
         guard let cropped = cgImage.cropping(to: pixelRect) else {
             NSLog("Tapink: failed to crop screenshot to selected region \(pixelRect)")
-            return
+            return false
         }
         playShutterSound()
         deliver(NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height)), saveToDisk: saveToDisk)
+        return true
     }
 
     /// Same underlying capture as `capture`, but hands back the raw image without playing the

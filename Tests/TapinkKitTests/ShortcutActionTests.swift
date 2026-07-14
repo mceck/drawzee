@@ -31,6 +31,8 @@ final class ShortcutActionTests: XCTestCase {
             .copyScreenshot: "copyScreenshot",
             .saveScreenshot: "saveScreenshot",
             .regionScreenshot: "regionScreenshot",
+            .recordScreen: "recordScreen",
+            .regionRecording: "regionRecording",
             .freezeBackground: "freezeBackground",
             .clearCanvas: "clearCanvas",
             .undo: "undo",

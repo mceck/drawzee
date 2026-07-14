@@ -26,6 +26,7 @@ public final class AppSettings {
         static let brushLineWidth = "brushLineWidth"
         static let autofadeDelay = "autofadeDelaySeconds"
         static let startWithSidebarHidden = "startDrawModeWithSidebarHidden"
+        static let recordCursor = "recordCursorInVideos"
     }
 
     /// Called whenever `hideFromDockAndSwitcher` changes, so the app delegate can
@@ -104,6 +105,17 @@ public final class AppSettings {
     public var startDrawModeWithSidebarHidden: Bool {
         get { defaults.bool(forKey: Keys.startWithSidebarHidden) }
         set { defaults.set(newValue, forKey: Keys.startWithSidebarHidden) }
+    }
+
+    /// Whether the mouse cursor is captured in screen recordings. Defaults to on — a
+    /// recording is closer to a tutorial/walkthrough where seeing the pointer matters,
+    /// unlike screenshots which deliberately hide it (`ScreenshotService` always sets
+    /// `showsCursor = false`). Uses `object(forKey:)` rather than `bool(forKey:)` since
+    /// the latter can't distinguish "never set" from "explicitly set to false", and the
+    /// default here needs to be `true`.
+    public var recordCursorInVideos: Bool {
+        get { defaults.object(forKey: Keys.recordCursor) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Keys.recordCursor) }
     }
 
     public var brushLineWidth: CGFloat {
