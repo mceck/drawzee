@@ -301,8 +301,14 @@ public final class DrawSessionCoordinator: ObservableObject {
 
     public func setShape(_ shape: ShapeKind) {
         let changed = toolState.selectedShape != shape || toolState.selectedTool != .shape
-        toolState.selectedShape = shape
-        toolState.selectedTool = .shape
+        // Batch both mutations into a single struct assignment so `@Published`
+        // only fires once — otherwise Combine subscribers see an intermediate
+        // state where `selectedTool` is still the old tool and briefly set the
+        // previous tool's cursor (the main source of cursor flicker on tool change).
+        var newState = toolState
+        newState.selectedShape = shape
+        newState.selectedTool = .shape
+        toolState = newState
         if changed { announceCurrentTool() }
     }
 

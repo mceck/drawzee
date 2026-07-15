@@ -45,6 +45,9 @@ public final class CanvasView: NSView {
     /// since it fades out on its own timer independent of any redraw trigger.
     private var brushPreviewLayer: CAShapeLayer?
     private var brushPreviewHideWorkItem: DispatchWorkItem?
+    /// Tracks the global hide/unhide nesting so we don't over-unhide when
+    /// hiding the system cursor during brush-size preview.
+    private var isCursorHiddenForPreview = false
     private var activeTextView: CommittingTextView?
     /// The object being edited when `activeTextView` is re-editing an already-placed text
     /// (vs. authoring a brand new one), so `commitTextEditing` knows to update it in place
@@ -102,9 +105,194 @@ public final class CanvasView: NSView {
 
     public override func resetCursorRects() {
         super.resetCursorRects()
-        if isSelectingRegion {
-            addCursorRect(bounds, cursor: .crosshair)
+        // Even though cursor rects are unreliable on `.nonactivatingPanel`
+        // overlay panels, AppKit does evaluate them during mouse clicks —
+        // without a rect here, any click on the canvas resets the pointer to
+        // arrow until the next `mouseMoved`/`mouseDragged`.
+        addCursorRect(bounds, cursor: currentToolCursor)
+    }
+
+    // MARK: - Tool-appropriate cursors
+
+    /// Minimum diameter for the dot cursor so a 1pt hairline stroke never
+    /// shrinks the pointer to an invisible speck.
+    private static let minDotDiameter: CGFloat = 8
+
+    /// Caches dot cursors by diameter + color hash so we don't redraw on
+    /// every mouse-move.
+    private static var dotCursorCache: [String: NSCursor] = [:]
+
+    /// The cursor appropriate for the current tool and panel state. Shared by
+    /// `applyToolCursor` (called on every mouse move) and `resetCursorRects`
+    /// (called by AppKit during mouse clicks / window ordering).
+    private var currentToolCursor: NSCursor {
+        if isSelectingRegion { return .crosshair }
+        switch tool.selectedTool {
+        case .pen:
+            return dotCursor(diameter: max(Self.minDotDiameter, tool.lineWidth), color: tool.color, alpha: 1)
+        case .highlighter:
+            return dotCursor(diameter: max(Self.minDotDiameter, tool.lineWidth * 3), color: tool.color, alpha: 0.35)
+        case .shape:  return .crosshair
+        case .text:   return .iBeam
+        case .spotlight, .move: return .arrow
+        case .eraser: return Self.eraserCursor
         }
+    }
+
+    /// Sets the cursor that matches the currently active tool, or crosshair
+    /// if the view is in region-selection mode. Called from `mouseMoved` and
+    /// `mouseDragged` (which don't reset cursor rects automatically on
+    /// non-key panels).
+    private func applyToolCursor() {
+        currentToolCursor.set()
+    }
+
+    /// Re-asserts the tool-appropriate cursor — call from outside when the
+    /// tool/width changes while the pointer is already inside the view.
+    func refreshCursor() {
+        // Don't unhide while the brush-size preview ring is active — the
+        /// scroll wheel handler owns cursor visibility during that interval
+        /// and will unhide on its own 0.45 s timer (fixes a flicker where
+        /// `onLineWidthChange` → Combine sink → `refreshCursor()` used to
+        /// cancel `NSCursor.hide()` in the middle of a scroll sequence).
+        if !isBrushPreviewActive {
+            unhideCursorIfNeeded()
+        }
+        applyToolCursor()
+    }
+
+    private var isBrushPreviewActive: Bool {
+        brushPreviewHideWorkItem != nil || brushPreviewLayer != nil
+    }
+
+    private func unhideCursorIfNeeded() {
+        if isCursorHiddenForPreview {
+            NSCursor.unhide()
+            isCursorHiddenForPreview = false
+        }
+    }
+
+    /// Returns a cached (or newly created) dot cursor for the given
+    /// diameter, color and opacity — used by `currentToolCursor` to build
+    /// the pen/highlighter pointer without immediately activating it.
+    private func dotCursor(diameter: CGFloat, color: NSColor, alpha: CGFloat) -> NSCursor {
+        let key = Self.dotCursorCacheKey(diameter: diameter, color: color, alpha: alpha)
+        if let cached = Self.dotCursorCache[key] { return cached }
+        let cursor = Self.makeDotCursor(diameter: diameter, color: color, alpha: alpha)
+        Self.dotCursorCache[key] = cursor
+        return cursor
+    }
+
+    private static func dotCursorCacheKey(diameter: CGFloat, color: NSColor, alpha: CGFloat) -> String {
+        let d = Int(round(diameter))
+        let srgb = color.usingColorSpace(.sRGB) ?? color
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, _: CGFloat = 0
+        srgb.getRed(&r, green: &g, blue: &b, alpha: nil)
+        return "\(d)-\(Int(r * 255))-\(Int(g * 255))-\(Int(b * 255))-\(Int(alpha * 100))"
+    }
+
+    /// Draws a filled circle with a white outline, sized to the brush stroke
+    /// width and tinted with the current tool color (using the given alpha
+    /// so the highlighter cursor previews its semi-transparent look).
+    private static func makeDotCursor(diameter: CGFloat, color: NSColor, alpha: CGFloat) -> NSCursor {
+        let padding: CGFloat = 6
+        let totalSize = diameter + padding * 2
+        let image = NSImage(size: NSSize(width: totalSize, height: totalSize))
+        image.lockFocus()
+
+        let circleRect = CGRect(x: padding, y: padding, width: diameter, height: diameter)
+        let fillColor = color.withAlphaComponent(alpha)
+
+        // Dark outline shadow so the white ring stays legible on light backgrounds.
+        let shadowPath = NSBezierPath(ovalIn: circleRect.insetBy(dx: -0.5, dy: -0.5))
+        NSColor.black.withAlphaComponent(0.35).setStroke()
+        shadowPath.lineWidth = 1
+        shadowPath.stroke()
+
+        // Fill with the selected color at the correct alpha.
+        let fill = NSBezierPath(ovalIn: circleRect)
+        fillColor.setFill()
+        fill.fill()
+
+        // Main white outline — visible on dark backgrounds.
+        let path = NSBezierPath(ovalIn: circleRect)
+        path.lineWidth = 1.5
+        NSColor.white.setStroke()
+        path.stroke()
+
+        image.unlockFocus()
+
+        return NSCursor(image: image, hotSpot: NSPoint(x: totalSize / 2, y: totalSize / 2))
+    }
+
+    /// An eraser icon drawn once and reused. Uses the SF Symbol
+    /// "eraser.fill" (the solid variant — plain "eraser" renders as a hollow
+    /// outline that reads poorly at cursor size) tinted white with a dark
+    /// drop-shadow so it's visible on any background. Falls back to the pen
+    /// cursor's filled-circle look (in white) if the symbol is unavailable.
+    private static let eraserCursor: NSCursor = {
+        makeEraserSymbolCursor() ?? makeDotCursor(diameter: 20, color: .white, alpha: 1)
+    }()
+
+    private static func makeEraserSymbolCursor() -> NSCursor? {
+        guard let symbol = NSImage(systemSymbolName: "eraser.fill", accessibilityDescription: nil) else {
+            return nil
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        guard let configured = symbol.withSymbolConfiguration(config) else { return nil }
+
+        // `NSImage.draw` doesn't actually recolor a template image just because
+        // `NSColor.set()` was called beforehand — that only affects appearance-
+        // aware controls (buttons, toolbar items). Drawn directly like this, the
+        // glyph always rendered in its own default (black) color, which is why
+        // this used to come out filled black instead of white. Manually tint by
+        // drawing the glyph then compositing a solid fill on top with
+        // `.sourceAtop`, which recolors only the already-opaque pixels.
+        let blackGlyph = CanvasView.tinted(configured, color: .black)
+        let whiteGlyph = CanvasView.tinted(configured, color: .white)
+
+        let size = NSSize(width: 24, height: 24)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        let drawRect = CGRect(x: 2, y: 2, width: 20, height: 20)
+
+        // Black outline — the white glyph drawn dead-center over several offset
+        // copies of the black one leaves a thin black ring peeking out on every
+        // side, giving a stroked-outline look instead of a flat drop shadow.
+        let outlineOffset: CGFloat = 0.55
+        let outlineOffsets: [CGVector] = [
+            CGVector(dx: -outlineOffset, dy: 0), CGVector(dx: outlineOffset, dy: 0),
+            CGVector(dx: 0, dy: -outlineOffset), CGVector(dx: 0, dy: outlineOffset),
+            CGVector(dx: -outlineOffset, dy: -outlineOffset), CGVector(dx: outlineOffset, dy: -outlineOffset),
+            CGVector(dx: -outlineOffset, dy: outlineOffset), CGVector(dx: outlineOffset, dy: outlineOffset),
+        ]
+        for offset in outlineOffsets {
+            blackGlyph.draw(in: drawRect.offsetBy(dx: offset.dx, dy: offset.dy),
+                            from: .zero, operation: .sourceOver,
+                            fraction: 1, respectFlipped: true, hints: nil)
+        }
+
+        // White fill on top, dead-center.
+        whiteGlyph.draw(in: drawRect, from: .zero, operation: .sourceOver,
+                        fraction: 1, respectFlipped: true, hints: nil)
+
+        image.unlockFocus()
+        return NSCursor(image: image, hotSpot: NSPoint(x: 12, y: 12))
+    }
+
+    /// Recolors a template image by drawing it, then compositing a solid fill
+    /// over it with `.sourceAtop` (which only paints where the image was
+    /// already opaque) — the correct way to tint a template `NSImage`, since
+    /// `NSColor.set()` alone has no effect on a plain `draw(in:...)` call.
+    private static func tinted(_ image: NSImage, color: NSColor) -> NSImage {
+        let tinted = NSImage(size: image.size)
+        tinted.lockFocus()
+        image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        color.set()
+        NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+        return tinted
     }
 
     // MARK: - Freeze background
@@ -133,7 +321,7 @@ public final class CanvasView: NSView {
         if active {
             NSCursor.crosshair.set()
         } else {
-            NSCursor.arrow.set()
+            applyToolCursor()
         }
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
@@ -151,6 +339,10 @@ public final class CanvasView: NSView {
     // MARK: - Mouse handling
 
     public override func mouseDown(with event: NSEvent) {
+        // AppKit may reset the cursor during mouse-event delivery on
+        // non-key panels — reassert the tool cursor immediately so the
+        // user never sees a flash of arrow before the first drag.
+        applyToolCursor()
         if isSelectingRegion {
             let point = convert(event.locationInWindow, from: nil)
             regionSelectionStart = point
@@ -233,6 +425,9 @@ public final class CanvasView: NSView {
             needsDisplay = true
             return
         }
+        // Same reasoning as the crosshair above — `mouseMoved` doesn't fire
+        // during a drag, so the tool cursor must be reasserted here too.
+        applyToolCursor()
         switch tool.selectedTool {
         case .pen, .highlighter:
             guard isDrawingInProgress else { return }
@@ -267,6 +462,18 @@ public final class CanvasView: NSView {
     }
 
     public override func mouseUp(with event: NSEvent) {
+        // AppKit can swap the cursor back to whatever was last *registered*
+        // via `addCursorRect` right as a drag ends on these non-key panels —
+        // not necessarily the arrow, but a stale entry from whichever tool was
+        // active the last time `resetCursorRects` naturally fired (window
+        // ordering/key changes), which can be any tool, not just the current
+        // one. `mouseDown`/`mouseDragged` already reassert live, but only
+        // invalidating here forces AppKit to re-register the *current* tool's
+        // cursor too, so a later automatic reset can't resurrect a stale one.
+        defer {
+            applyToolCursor()
+            window?.invalidateCursorRects(for: self)
+        }
         if isSelectingRegion {
             defer {
                 regionSelectionStart = nil
@@ -363,9 +570,7 @@ public final class CanvasView: NSView {
         // while the pointer stayed over the (key) toolbar. Re-asserting it here
         // rides the same `.activeAlways` tracking area that already makes the
         // spotlight tool work regardless of key status.
-        if isSelectingRegion {
-            NSCursor.crosshair.set()
-        }
+        applyToolCursor()
         guard tool.selectedTool == .spotlight else {
             clearSpotlight()
             return
@@ -398,8 +603,14 @@ public final class CanvasView: NSView {
 
     /// A white ring with a black shadow halo (rather than matching the brush color) stays
     /// legible at any brush color/background combination without needing a second layer.
+    /// The system cursor is hidden while the ring is visible so only the ring previews
+    /// the exact brush size without a distracting extra pointer on top.
     private func showBrushSizePreview(at point: CGPoint, diameter: CGFloat) {
         brushPreviewHideWorkItem?.cancel()
+        if !isCursorHiddenForPreview {
+            NSCursor.hide()
+            isCursorHiddenForPreview = true
+        }
         if brushPreviewLayer == nil {
             let layer = CAShapeLayer()
             layer.fillColor = NSColor.clear.cgColor
@@ -426,6 +637,7 @@ public final class CanvasView: NSView {
     }
 
     private func hideBrushSizePreview() {
+        unhideCursorIfNeeded()
         guard let layer = brushPreviewLayer else { return }
         brushPreviewLayer = nil
         CATransaction.begin()
@@ -521,6 +733,10 @@ public final class CanvasView: NSView {
             textView.selectAll(nil)
         }
         activeTextView = textView
+        // `makeKeyAndOrderFront` can trigger AppKit's `resetCursorRects`,
+        // which for a `.nonactivatingPanel` without cursor rects resets to
+        // arrow — reassert the tool cursor immediately to prevent a flash.
+        refreshCursor()
     }
 
     /// Where the glyphs currently in `textView` would land in this (non-flipped) canvas's

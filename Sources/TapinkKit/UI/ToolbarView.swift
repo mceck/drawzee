@@ -124,6 +124,14 @@ private struct MenuButtonInteraction: NSViewRepresentable {
         /// button would also start dragging the whole toolbar around.
         override var mouseDownCanMoveWindow: Bool { false }
 
+        /// Without this, a click here while the toolbar isn't key (e.g. right after drawing
+        /// a stroke hands key status to that screen's canvas overlay — see
+        /// `CanvasView.acceptsFirstMouse`) only brings the toolbar back to key and is swallowed
+        /// before reaching `mouseDown` below, so the shape button's first click after drawing
+        /// did nothing. Every other toolbar button lives directly in the hosting view's own
+        /// SwiftUI content and doesn't hit this; only this button overlays its own real `NSView`.
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
             let start = event.locationInWindow
