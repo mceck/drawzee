@@ -57,11 +57,18 @@ public final class OverlayWindowController: NSObject {
         }
         canvas.onLineWidthChange = { [weak coordinator] width in coordinator?.setLineWidth(width) }
 
+        var previousSelectedTool = coordinator.toolState.selectedTool
         cancellable = coordinator.$toolState
             .sink { [weak canvas] state in
                 if state.selectedTool != .spotlight {
                     canvas?.clearSpotlight()
+                } else if previousSelectedTool != .spotlight {
+                    // Mirrors `clearSpotlight()` above: turning the tool on via hotkey
+                    // shouldn't need a mouse move to reveal the mask any more than turning
+                    // it off needs one to hide it.
+                    canvas?.activateSpotlightAtCurrentMouseLocation()
                 }
+                previousSelectedTool = state.selectedTool
                 // Keeps an in-progress text edit's color/font size updating live as the user
                 // adjusts them from the toolbar (or ⌘-scroll) instead of only taking effect once
                 // committed — a no-op on every canvas but the one actually editing text.

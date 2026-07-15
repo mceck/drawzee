@@ -525,7 +525,7 @@ public final class CanvasView: NSView {
             guard let start = shapeStart, let end = shapeCurrent, start != end else { return }
             let shape = ShapeObject(
                 screen: screenID, kind: tool.selectedShape, startPoint: start,
-                endPoint: end, color: tool.color, width: tool.lineWidth
+                endPoint: end, color: tool.color, width: tool.lineWidth, fillColor: tool.fillColor
             )
             document?.add(.shape(shape))
         default:
@@ -583,6 +583,18 @@ public final class CanvasView: NSView {
         spotlightLayer?.removeFromSuperlayer()
         spotlightLayer = nil
         spotlightRadius = 130
+    }
+
+    /// Called when the hotkey switches the tool to spotlight, so the mask appears at the
+    /// current cursor position right away instead of waiting for the next `mouseMoved` —
+    /// which otherwise wouldn't fire until the user actually moves the mouse. Only the
+    /// screen the cursor is actually over ends up drawing anything, same as `mouseMoved`.
+    func activateSpotlightAtCurrentMouseLocation() {
+        guard let window else { return }
+        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let viewPoint = convert(windowPoint, from: nil)
+        guard bounds.contains(viewPoint) else { return }
+        updateSpotlight(at: viewPoint)
     }
 
     private func updateSpotlight(at point: CGPoint) {
@@ -853,7 +865,7 @@ public final class CanvasView: NSView {
                 drawStroke(points: currentStrokePoints, color: tool.color, width: tool.lineWidth, highlighter: tool.selectedTool == .highlighter)
             case .shape:
                 if let start = shapeStart, let end = shapeCurrent {
-                    drawShape(kind: tool.selectedShape, start: start, end: end, color: tool.color, width: tool.lineWidth)
+                    drawShape(kind: tool.selectedShape, start: start, end: end, color: tool.color, width: tool.lineWidth, fillColor: tool.fillColor)
                 }
             default:
                 break
@@ -880,7 +892,8 @@ public final class CanvasView: NSView {
             drawStroke(points: points, color: stroke.color, width: stroke.width, highlighter: stroke.isHighlighter)
         case .shape(let shape):
             let color = fade > 0 ? shape.color.withAlphaComponent(shape.color.alphaComponent * (1 - fade)) : shape.color
-            drawShape(kind: shape.kind, start: shape.startPoint, end: shape.endPoint, color: color, width: shape.width)
+            let fillColor = fade > 0 ? shape.fillColor.withAlphaComponent(shape.fillColor.alphaComponent * (1 - fade)) : shape.fillColor
+            drawShape(kind: shape.kind, start: shape.startPoint, end: shape.endPoint, color: color, width: shape.width, fillColor: fillColor)
         case .text(let text):
             drawText(text, alpha: 1 - fade)
         }
@@ -938,19 +951,30 @@ public final class CanvasView: NSView {
         path.curve(to: end, controlPoint1: control1, controlPoint2: control2)
     }
 
-    private func drawShape(kind: ShapeKind, start: CGPoint, end: CGPoint, color: NSColor, width: CGFloat) {
-        color.setStroke()
+    private func drawShape(kind: ShapeKind, start: CGPoint, end: CGPoint, color: NSColor, width: CGFloat, fillColor: NSColor) {
         let path = CanvasView.shapePath(kind: kind, start: start, end: end)
+        // Only rectangle/ellipse have an interior to fill — a line/arrow's path isn't closed,
+        // so filling it would produce a nonsensical shape rather than nothing.
+        if (kind == .rectangle || kind == .ellipse), fillColor.alphaComponent > 0 {
+            fillColor.setFill()
+            path.fill()
+        }
+        color.setStroke()
         path.lineWidth = width
         path.lineCapStyle = .round
         path.stroke()
     }
 
+    /// Small enough to read as "softened corners" rather than a rounded-rect shape of its own;
+    /// `NSBezierPath` clamps this down automatically on rectangles narrower/shorter than double
+    /// the radius, so a thin drag never produces a self-intersecting outline.
+    private static let rectangleCornerRadius: CGFloat = 2
+
     static func shapePath(kind: ShapeKind, start: CGPoint, end: CGPoint) -> NSBezierPath {
         let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
         switch kind {
         case .rectangle:
-            return NSBezierPath(rect: rect)
+            return NSBezierPath(roundedRect: rect, xRadius: rectangleCornerRadius, yRadius: rectangleCornerRadius)
         case .ellipse:
             return NSBezierPath(ovalIn: rect)
         case .line:
@@ -1147,7 +1171,16 @@ extension DrawingObject {
                 .copy(strokingWithWidth: drawnWidth + Self.hitTolerance * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
                 .contains(point)
         case .shape(let shape):
-            return CanvasView.shapePath(kind: shape.kind, start: shape.startPoint, end: shape.endPoint).cgPath
+            let path = CanvasView.shapePath(kind: shape.kind, start: shape.startPoint, end: shape.endPoint)
+            // A filled rectangle/ellipse reads visually as a solid object, so its whole interior
+            // should be grabbable, not just a band around the outline — matches the fill condition
+            // `drawShape` itself uses. Unfilled shapes stay outline-only so their hollow interior
+            // still lets a click reach through to whatever's drawn inside.
+            if (shape.kind == .rectangle || shape.kind == .ellipse), shape.fillColor.alphaComponent > 0,
+               path.cgPath.contains(point) {
+                return true
+            }
+            return path.cgPath
                 .copy(strokingWithWidth: shape.width + Self.hitTolerance * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
                 .contains(point)
         case .text(let text):

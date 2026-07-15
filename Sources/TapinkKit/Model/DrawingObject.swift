@@ -27,14 +27,18 @@ public struct ShapeObject: Identifiable {
     public var endPoint: CGPoint
     public var color: NSColor
     public var width: CGFloat
+    /// Interior fill, `.clear` (the default) meaning outline-only. Only rendered for
+    /// `.rectangle`/`.ellipse` — see `CanvasView.drawShape`.
+    public var fillColor: NSColor
 
-    public init(screen: ScreenID, kind: ShapeKind, startPoint: CGPoint, endPoint: CGPoint, color: NSColor, width: CGFloat) {
+    public init(screen: ScreenID, kind: ShapeKind, startPoint: CGPoint, endPoint: CGPoint, color: NSColor, width: CGFloat, fillColor: NSColor = .clear) {
         self.screen = screen
         self.kind = kind
         self.startPoint = startPoint
         self.endPoint = endPoint
         self.color = color
         self.width = width
+        self.fillColor = fillColor
     }
 }
 

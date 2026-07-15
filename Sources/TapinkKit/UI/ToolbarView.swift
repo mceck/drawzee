@@ -220,13 +220,14 @@ private struct OptionalKeyboardShortcut: ViewModifier {
 struct ToolbarView: View {
     @ObservedObject var coordinator: DrawSessionCoordinator
     @State private var showColorPicker = false
+    @State private var showFillColorPicker = false
     @State private var showSizePicker = false
 
     private static let longPressDuration: TimeInterval = 0.4
 
     var body: some View {
         VStack(spacing: 10) {
-            colorSwatch
+            colorSwatchRow
 
             if coordinator.isSidebarCollapsed {
                 collapsedToolIndicator
@@ -338,6 +339,45 @@ struct ToolbarView: View {
             ColorPickerPopover(coordinator: coordinator)
         }
         .sidebarTooltip("Color (\(shortcutText(.nextColor)) cycles)", coordinator: coordinator)
+    }
+
+    /// Fill only means anything for the shape tool, so its swatch only appears alongside the
+    /// main color swatch while `.shape` is selected — smaller, offset down-right, and declared
+    /// first so it paints behind the (in-front) main swatch, mirroring the classic stroke-over-
+    /// fill dual color well look (e.g. Finder's/Preview's color icon).
+    private var colorSwatchRow: some View {
+        ZStack {
+            if coordinator.toolState.selectedTool == .shape {
+                fillColorSwatch
+                    .offset(x: 10, y: 10)
+                    .transition(.opacity)
+            }
+            colorSwatch
+        }
+        .padding(.bottom, 4)
+        .animation(.easeInOut(duration: 0.15), value: coordinator.toolState.selectedTool == .shape)
+    }
+
+    private var fillColorSwatch: some View {
+        Button {
+            showFillColorPicker.toggle()
+        } label: {
+            ZStack {
+                CheckerboardSwatchBackground()
+                Circle().fill(Color(nsColor: coordinator.toolState.fillColor))
+            }
+            .frame(width: 18, height: 18)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 1))
+            // Otherwise only the tiny sliver poking out from behind the main swatch is
+            // clickable — same class of issue as the brush-size dot elsewhere in this file.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showFillColorPicker, arrowEdge: .trailing) {
+            FillColorPickerPopover(coordinator: coordinator)
+        }
+        .sidebarTooltip("Fill Color", coordinator: coordinator)
     }
 
     // Mirrors the systemName used by each `toolButton`/`shapeButton` below, so
@@ -585,5 +625,68 @@ private struct ColorPickerPopover: View {
         }
         .padding()
         .frame(width: 160)
+    }
+}
+
+/// A small gray/white checker pattern shown behind a color swatch so a fully (or partially)
+/// transparent fill reads as "transparent" rather than as an odd flat gray.
+private struct CheckerboardSwatchBackground: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let half = proxy.size.width / 2
+            ZStack {
+                Color.white
+                Rectangle().fill(Color.gray.opacity(0.5)).frame(width: half, height: half)
+                    .position(x: half / 2, y: half / 2)
+                Rectangle().fill(Color.gray.opacity(0.5)).frame(width: half, height: half)
+                    .position(x: proxy.size.width - half / 2, y: proxy.size.height - half / 2)
+            }
+        }
+    }
+}
+
+private struct FillColorPickerPopover: View {
+    @ObservedObject var coordinator: DrawSessionCoordinator
+
+    private let presets: [NSColor] = ToolState.colorPalette
+
+    var body: some View {
+        VStack(spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(24)), count: 4), spacing: 10) {
+                noFillSwatch
+                ForEach(presets.indices, id: \.self) { index in
+                    Circle()
+                        .fill(Color(nsColor: presets[index]))
+                        .frame(width: 24, height: 24)
+                        .onTapGesture { coordinator.setFillColor(presets[index]) }
+                }
+            }
+            ColorPicker(
+                "Custom",
+                selection: Binding(
+                    get: { Color(nsColor: coordinator.toolState.fillColor) },
+                    set: { coordinator.setFillColor(NSColor($0)) }
+                )
+            )
+        }
+        .padding()
+        .frame(width: 160)
+    }
+
+    /// Explicit "no fill" swatch — without one, there'd be no way back to a transparent fill
+    /// once a real color is picked, short of dragging the custom picker's opacity to zero.
+    private var noFillSwatch: some View {
+        ZStack {
+            CheckerboardSwatchBackground()
+            if coordinator.toolState.fillColor.alphaComponent == 0 {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.black.opacity(0.6))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.black.opacity(0.2), lineWidth: 1))
+        .onTapGesture { coordinator.setFillColor(.clear) }
     }
 }

@@ -90,6 +90,7 @@ public final class AppSettings {
         static let regionScreenshotDestination = "regionScreenshotDestination"
         static let shortcuts = "shortcutBindingsOverride"
         static let brushColor = "brushColorComponents"
+        static let shapeFillColor = "shapeFillColorComponents"
         static let brushLineWidth = "brushLineWidth"
         static let autofadeDelay = "autofadeDelaySeconds"
         static let startWithSidebarHidden = "startDrawModeWithSidebarHidden"
@@ -154,6 +155,25 @@ public final class AppSettings {
             defaults.set(
                 [Double(rgba.redComponent), Double(rgba.greenComponent), Double(rgba.blueComponent), Double(rgba.alphaComponent)],
                 forKey: Keys.brushColor
+            )
+        }
+    }
+
+    /// Same storage scheme as `brushColor`, defaulting to fully transparent (outline-only
+    /// shapes) rather than a real color, since that's the pre-existing look every shape had
+    /// before a fill option existed.
+    public var shapeFillColor: NSColor {
+        get {
+            guard let components = defaults.array(forKey: Keys.shapeFillColor) as? [Double], components.count == 4 else {
+                return .clear
+            }
+            return NSColor(srgbRed: components[0], green: components[1], blue: components[2], alpha: components[3])
+        }
+        set {
+            let rgba = newValue.usingColorSpace(.sRGB) ?? .clear
+            defaults.set(
+                [Double(rgba.redComponent), Double(rgba.greenComponent), Double(rgba.blueComponent), Double(rgba.alphaComponent)],
+                forKey: Keys.shapeFillColor
             )
         }
     }

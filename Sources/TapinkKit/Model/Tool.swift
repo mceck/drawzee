@@ -95,6 +95,11 @@ public struct ToolState {
     public var color: NSColor = .systemYellow
     public var lineWidth: CGFloat = 4
 
+    /// Fill color for shapes (rectangle/ellipse only — a line/arrow has no interior to fill).
+    /// Only relevant while `.shape` is selected. Defaults to fully transparent, i.e. outline-only,
+    /// matching every shape drawn before this existed.
+    public var fillColor: NSColor = .clear
+
     /// The tool active right before a temporary hold-to-move gesture forced `selectedTool` to
     /// `.move` (see `DrawSessionCoordinator.beginTemporaryMoveTool`); `nil` when the hold isn't
     /// in effect. Exposed here (not just kept private in the coordinator) so `CanvasView`'s

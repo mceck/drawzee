@@ -68,6 +68,7 @@ public final class DrawSessionCoordinator: ObservableObject {
     public init() {
         toolbarController.coordinator = self
         toolState.color = AppSettings.shared.brushColor
+        toolState.fillColor = AppSettings.shared.shapeFillColor
         toolState.lineWidth = AppSettings.shared.brushLineWidth
         document.onChange = { [weak self] in
             guard let self else { return }
@@ -282,6 +283,12 @@ public final class DrawSessionCoordinator: ObservableObject {
     public func setColor(_ color: NSColor) {
         toolState.color = color
         AppSettings.shared.brushColor = color
+    }
+
+    /// Shape fill is independent of the stroke color set above — see `ToolState.fillColor`.
+    public func setFillColor(_ color: NSColor) {
+        toolState.fillColor = color
+        AppSettings.shared.shapeFillColor = color
     }
 
     /// Advances to the next swatch in `ToolState.colorPalette`, wrapping around at the end.
