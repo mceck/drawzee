@@ -76,4 +76,9 @@ final class ToolTests: XCTestCase {
         XCTAssertEqual(state.color, .systemRed)
         XCTAssertEqual(state.lineWidth, 10)
     }
+
+    func testColorPaletteIsNonEmptyWithNoDuplicates() {
+        XCTAssertFalse(ToolState.colorPalette.isEmpty)
+        XCTAssertEqual(ToolState.colorPalette.count, Set(ToolState.colorPalette).count, "duplicate swatches would make selectNextColor() get stuck cycling through fewer distinct colors than shown")
+    }
 }

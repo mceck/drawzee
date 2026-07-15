@@ -23,6 +23,17 @@ public enum ShapeKind: String, Codable, CaseIterable {
         case .arrow: return "arrow.up.right"
         }
     }
+
+    /// The rebindable action that selects this shape — lets tooltips/menus look up the live
+    /// binding instead of hardcoding a key that may have been reassigned in Settings.
+    public var shortcutAction: ShortcutAction {
+        switch self {
+        case .rectangle: return .shapeRectangle
+        case .ellipse: return .shapeEllipse
+        case .line: return .shapeLine
+        case .arrow: return .shapeArrow
+        }
+    }
 }
 
 public enum DrawingTool: String, Codable, CaseIterable {
@@ -60,6 +71,22 @@ public enum DrawingTool: String, Codable, CaseIterable {
         case .eraser: return "eraser"
         }
     }
+
+    /// The rebindable action that selects this tool — lets tooltips look up the live binding
+    /// instead of hardcoding a key that may have been reassigned in Settings. `nil` for `.shape`:
+    /// it no longer has a single generic shortcut of its own (click cycles to the last-used
+    /// shape, long-press/right-click picks a specific one — see `ToolbarView.shapeButton`).
+    public var shortcutAction: ShortcutAction? {
+        switch self {
+        case .pen: return .toolPen
+        case .highlighter: return .toolHighlighter
+        case .shape: return nil
+        case .spotlight: return .toolSpotlight
+        case .text: return .toolText
+        case .move: return .toolMove
+        case .eraser: return .toolEraser
+        }
+    }
 }
 
 public struct ToolState {
@@ -68,10 +95,26 @@ public struct ToolState {
     public var color: NSColor = .systemYellow
     public var lineWidth: CGFloat = 4
 
+    /// The tool active right before a temporary hold-to-move gesture forced `selectedTool` to
+    /// `.move` (see `DrawSessionCoordinator.beginTemporaryMoveTool`); `nil` when the hold isn't
+    /// in effect. Exposed here (not just kept private in the coordinator) so `CanvasView`'s
+    /// ⌘-scroll brush-size preview can target the tool actually being resized even though the
+    /// default hold-to-move modifier is also ⌘, which has already flipped `selectedTool` to
+    /// `.move` by the time the scroll event arrives.
+    public var toolBeforeTemporaryMove: DrawingTool?
+
     /// The point size the text tool renders at for the current `lineWidth`.
     /// Shared between `CanvasView.beginTextEditing` and the toolbar's size
     /// swatch so the number the user sees is the size the text actually gets.
     public var textFontSize: CGFloat { 12 + lineWidth * 3 }
+
+    /// The preset swatches shown in the toolbar's color popover, in the fixed order
+    /// `DrawSessionCoordinator.selectNextColor()` cycles through — shared so the
+    /// shortcut and the popover UI can never drift apart into two different lists.
+    public static let colorPalette: [NSColor] = [
+        .systemYellow, .systemRed, .systemOrange, .systemGreen,
+        .systemBlue, .systemPurple, .white, .black,
+    ]
 
     public init() {}
 }

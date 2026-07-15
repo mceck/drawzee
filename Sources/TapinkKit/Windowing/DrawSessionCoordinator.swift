@@ -45,6 +45,7 @@ public final class DrawSessionCoordinator: ObservableObject {
     private var overlayControllers: [OverlayWindowController] = []
     private let toolbarController = ToolbarPanelController()
     private let toastController = ToastPanelController()
+    private let tooltipController = TooltipPanelController()
     private var screenObserver: NSObjectProtocol?
     private var previouslyActiveApp: NSRunningApplication?
     private var toolBeforeSpotlight: DrawingTool?
@@ -58,10 +59,10 @@ public final class DrawSessionCoordinator: ObservableObject {
     private var recordingTimeoutTimer: Timer?
 
     /// Every TapInk-owned window that must never itself appear in a screenshot or recording —
-    /// the toolbar and the toast HUD. `freezeBackground()` additionally excludes the overlay
-    /// canvases themselves (see there).
+    /// the toolbar, the toast HUD, and the hover-tooltip panel. `freezeBackground()`
+    /// additionally excludes the overlay canvases themselves (see there).
     private var excludedCaptureWindowNumbers: [Int] {
-        [toolbarController.windowNumber, toastController.windowNumber]
+        [toolbarController.windowNumber, toastController.windowNumber, tooltipController.windowNumber]
     }
 
     public init() {
@@ -147,6 +148,7 @@ public final class DrawSessionCoordinator: ObservableObject {
         // rather than whatever was left selected last time (e.g. spotlight).
         toolState.selectedTool = .pen
         toolBeforeSpotlight = nil
+        toolState.toolBeforeTemporaryMove = nil
         overlayControllers.forEach { $0.canvasView.clearSelection() }
         // Same predictable-start philosophy as the tool reset above: auto-fade
         // is opt-in per session.
@@ -173,6 +175,10 @@ public final class DrawSessionCoordinator: ObservableObject {
         // by the user directly (status-item menu, or re-entering draw mode to toggle it off)
         // or by `recordingTimeoutTimer` once `AppSettings.maxRecordingDurationMinutes` elapses.
         isDrawModeActive = false
+        // Guards against a missed modifier-up (e.g. the user cmd-tabbed away mid-hold, so
+        // `HotkeyManager` never saw the release): without this, a stale non-nil value here would
+        // make the *next* session's first `beginTemporaryMoveTool()` a no-op.
+        toolState.toolBeforeTemporaryMove = nil
         // Anything still waiting to fade (or mid-erase) was already promised to
         // disappear; finish the erase now rather than resurrecting it whole the
         // next time draw mode opens. Must run before `setEnabled(false)`, which
@@ -183,6 +189,7 @@ public final class DrawSessionCoordinator: ObservableObject {
         unfreezeBackground()
         overlayControllers.forEach { $0.hide() }
         toolbarController.hide()
+        tooltipController.hide()
         previouslyActiveApp?.activate(options: [])
         previouslyActiveApp = nil
     }
@@ -252,9 +259,39 @@ public final class DrawSessionCoordinator: ObservableObject {
         announceCurrentTool()
     }
 
+    /// Called by `HotkeyManager` when `AppSettings.temporaryMoveToolModifier` goes down/up while
+    /// draw mode is active — a quick way to nudge things around without leaving whatever tool is
+    /// currently selected. Bypasses `selectTool()` (and its toast) entirely: this is meant to be
+    /// tapped rapidly and repeatedly, and announcing every hold would be more noise than signal
+    /// (same reasoning as spotlight's silence in `announceCurrentTool()`).
+    public func beginTemporaryMoveTool() {
+        guard toolState.toolBeforeTemporaryMove == nil else { return }
+        toolState.toolBeforeTemporaryMove = toolState.selectedTool
+        toolState.selectedTool = .move
+    }
+
+    public func endTemporaryMoveTool() {
+        guard let previousTool = toolState.toolBeforeTemporaryMove else { return }
+        toolState.toolBeforeTemporaryMove = nil
+        if toolState.selectedTool == .move, previousTool != .move {
+            overlayControllers.forEach { $0.canvasView.clearSelection() }
+        }
+        toolState.selectedTool = previousTool
+    }
+
     public func setColor(_ color: NSColor) {
         toolState.color = color
         AppSettings.shared.brushColor = color
+    }
+
+    /// Advances to the next swatch in `ToolState.colorPalette`, wrapping around at the end.
+    /// If the current color isn't one of the presets (e.g. a custom color from the picker),
+    /// this wraps to the first preset rather than matching by proximity.
+    public func selectNextColor() {
+        let palette = ToolState.colorPalette
+        guard !palette.isEmpty else { return }
+        let currentIndex = palette.firstIndex(where: { $0.isEqual(toolState.color) }) ?? -1
+        setColor(palette[(currentIndex + 1) % palette.count])
     }
 
     public func setLineWidth(_ width: CGFloat) {
@@ -276,6 +313,23 @@ public final class DrawSessionCoordinator: ObservableObject {
     /// `excludedCaptureWindowNumbers`.
     private func showToast(_ message: String, systemImage: String) {
         toastController.show(message: message, systemImage: systemImage, on: toolbarController.currentScreen)
+    }
+
+    /// `windowLocalFrame` is a sidebar button's frame in the toolbar panel's own (window-base)
+    /// coordinate system — `ToolbarView`'s tooltip modifier reports it this way via
+    /// `NSView.convert(_:to: nil)`, sidestepping any AppKit/SwiftUI coordinate-flip math here.
+    public func showTooltip(_ text: String, forButtonAt windowLocalFrame: CGRect) {
+        let buttonFrameOnScreen = toolbarController.screenFrame(forWindowLocalRect: windowLocalFrame)
+        tooltipController.show(
+            text: text,
+            besideButtonAt: buttonFrameOnScreen,
+            toolbarFrameOnScreen: toolbarController.frameOnScreen,
+            on: toolbarController.currentScreen
+        )
+    }
+
+    public func hideTooltip() {
+        tooltipController.hide()
     }
 
     /// `.shape` announces the specific selected shape (e.g. "Rectangle"), not a generic "Shape"

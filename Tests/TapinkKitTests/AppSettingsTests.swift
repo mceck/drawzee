@@ -9,6 +9,7 @@ final class AppSettingsTests: XCTestCase {
     private let screenshotFolderKey = "screenshotSaveFolderPath"
     private let hideFromDockKey = "hideFromDockAndSwitcher"
     private let maxRecordingDurationKey = "maxRecordingDurationMinutes"
+    private let temporaryMoveToolModifierKey = "temporaryMoveToolModifier"
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: "brushColorComponents")
@@ -17,12 +18,13 @@ final class AppSettingsTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: screenshotFolderKey)
         UserDefaults.standard.removeObject(forKey: hideFromDockKey)
         UserDefaults.standard.removeObject(forKey: maxRecordingDurationKey)
+        UserDefaults.standard.removeObject(forKey: temporaryMoveToolModifierKey)
         AppSettings.shared.onHideFromDockChanged = nil
         // Actions used by binding-related tests below; reset through the real API
         // (not a raw UserDefaults wipe) so the in-memory `overrides` cache the
         // singleton already loaded stays consistent with what's on disk.
         AppSettings.shared.resetBinding(for: .toolHighlighter)
-        AppSettings.shared.resetBinding(for: .toolShape)
+        AppSettings.shared.resetBinding(for: .toolMove)
         super.tearDown()
     }
 
@@ -64,9 +66,9 @@ final class AppSettingsTests: XCTestCase {
 
     func testResetBindingRevertsToDefault() {
         let custom = ShortcutBinding(keyCode: 40, modifiers: [.command, .option])
-        AppSettings.shared.setBinding(custom, for: .toolShape)
-        AppSettings.shared.resetBinding(for: .toolShape)
-        XCTAssertEqual(AppSettings.shared.binding(for: .toolShape), ShortcutBinding.defaults[.toolShape])
+        AppSettings.shared.setBinding(custom, for: .toolMove)
+        AppSettings.shared.resetBinding(for: .toolMove)
+        XCTAssertEqual(AppSettings.shared.binding(for: .toolMove), ShortcutBinding.defaults[.toolMove])
     }
 
     func testSetBindingPersistsAcrossOverridesReload() throws {
@@ -135,6 +137,25 @@ final class AppSettingsTests: XCTestCase {
     func testMaxRecordingDurationRoundTrips() {
         AppSettings.shared.maxRecordingDurationMinutes = 45
         XCTAssertEqual(AppSettings.shared.maxRecordingDurationMinutes, 45)
+    }
+
+    // MARK: - Temporary move tool modifier
+
+    func testTemporaryMoveToolModifierDefaultsToCommand() {
+        UserDefaults.standard.removeObject(forKey: temporaryMoveToolModifierKey)
+        XCTAssertEqual(AppSettings.shared.temporaryMoveToolModifier, .command)
+    }
+
+    func testTemporaryMoveToolModifierRoundTrips() {
+        AppSettings.shared.temporaryMoveToolModifier = .option
+        XCTAssertEqual(AppSettings.shared.temporaryMoveToolModifier, .option)
+        AppSettings.shared.temporaryMoveToolModifier = .command
+        XCTAssertEqual(AppSettings.shared.temporaryMoveToolModifier, .command)
+    }
+
+    func testTemporaryMoveToolModifierFallsBackToCommandForUnknownStoredValue() {
+        UserDefaults.standard.set("not-a-real-modifier", forKey: temporaryMoveToolModifierKey)
+        XCTAssertEqual(AppSettings.shared.temporaryMoveToolModifier, .command)
     }
 
     // MARK: - Hide from Dock / switcher

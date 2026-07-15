@@ -88,6 +88,17 @@ public final class ScreenRecordingService: NSObject {
         return rounded.isMultiple(of: 2) ? rounded : rounded - 1
     }
 
+    /// `RecordingQuality.bitsPerPixel` is tuned against HEVC; H.264 needs roughly 40% more bits
+    /// to hit the same visual quality, so it gets a flat multiplier rather than a second set of
+    /// per-quality constants. The 30fps assumption is just a sizing baseline for the *average*
+    /// bitrate cap passed to the encoder — actual output is far lower for the mostly-static
+    /// frames a screen recording produces, real motion is what pushes usage toward the cap.
+    static func targetBitRate(width: Int, height: Int, quality: RecordingQuality, codec: RecordingCodec) -> Int {
+        let codecFactor = codec == .h264 ? 1.4 : 1.0
+        let pixelsPerSecond = Double(width * height) * 30
+        return Int(pixelsPerSecond * quality.bitsPerPixel * codecFactor)
+    }
+
     @MainActor
     private func start(
         displayID: ScreenID,
@@ -119,10 +130,23 @@ public final class ScreenRecordingService: NSObject {
 
             let url = ScreenRecordingService.makeOutputURL()
             let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+            let codec = AppSettings.shared.recordingCodec
+            let quality = AppSettings.shared.recordingQuality
+            var compressionProperties: [String: Any] = [
+                AVVideoAverageBitRateKey: ScreenRecordingService.targetBitRate(
+                    width: config.width, height: config.height, quality: quality, codec: codec
+                ),
+            ]
+            // High profile squeezes noticeably more out of the same bitrate than H.264's
+            // Baseline/Main default; HEVC has no equivalent knob worth setting explicitly.
+            if codec == .h264 {
+                compressionProperties[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel
+            }
             let videoSettings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoCodecKey: codec.avCodecType,
                 AVVideoWidthKey: config.width,
                 AVVideoHeightKey: config.height,
+                AVVideoCompressionPropertiesKey: compressionProperties,
             ]
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
             input.expectsMediaDataInRealTime = true

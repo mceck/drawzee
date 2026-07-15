@@ -117,4 +117,15 @@ public final class ToolbarPanelController: NSObject {
     /// Whichever screen the toolbar is currently positioned on (it can be dragged between
     /// monitors), used to place the toast HUD alongside it.
     public var currentScreen: NSScreen? { panel.screen }
+
+    /// The toolbar panel's current on-screen frame, used by `TooltipPanelController` to decide
+    /// which side of the sidebar has more free room.
+    public var frameOnScreen: NSRect { panel.frame }
+
+    /// Converts a rect in the panel's own (window-base) coordinate system — as reported by
+    /// `NSView.convert(_:to: nil)` — to screen coordinates, for positioning a hover tooltip
+    /// beside whichever button reported its frame this way.
+    public func screenFrame(forWindowLocalRect rect: NSRect) -> NSRect {
+        panel.convertToScreen(rect)
+    }
 }

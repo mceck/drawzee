@@ -41,7 +41,7 @@ or run this: `xattr -cr /Applications/TapInk.app`
 
 * **Unobtrusive design.** No Dock icon or app-switcher entry by default; toggle both back on whenever you want. Optional launch at login.
 
-* **Customizable shortcuts.** Every action. Including drawing-tool selection. Has its keyboard shortcut, editable from Settings.
+* **Customizable shortcuts.** Every action including drawing-tool selection has its own keyboard shortcut, editable from Settings.
 
 ## Requirements
 
@@ -84,7 +84,7 @@ Draw on every display at once. The toolbar appears on one screen at a time.
 
 ### Taking screenshots
 
-** screen:**
+**screen:**
 
 * **⌘S** saves a PNG to disk.
 
@@ -106,6 +106,8 @@ Record Screen, Record Area. Recordings save as `.mov` files in the same folder a
 Only one recording can run at a time. Leaving Draw Mode while recording finishes and saves the file
 automatically. The mouse cursor is included in recordings by default (toggle it off in Settings).
 
+Recording codec (HEVC or H.264) and quality (high / balanced / small) can be changed in Settings.
+
 ### Undo, redo and clearing
 
 * **⌘Z** / **⌘⇧Z** undo/redo one action at a time.
@@ -125,6 +127,12 @@ Open, via the menu bar icon → **Settings…**:
 * **Selected-area screenshots go to**
 
 * **Show cursor in recordings**
+
+* **Recording codec** (HEVC / H.264)
+
+* **Recording quality** (high / balanced / small)
+
+* **Temporary move modifier** (⌘ / ⌥) — hold this key to temporarily switch to the Move tool
 
 * **Start draw mode with sidebar hidden**
 
@@ -147,11 +155,11 @@ Action | Default |
 | Redo | ⌘⇧Z |
 | Pen Tool | P |
 | Highlighter Tool | H |
-| Shape Tool | S |
 | Rectangle Shape | 1 |
 | Ellipse Shape | 2 |
 | Line Shape | 3 |
 | Arrow Shape | 4 |
+| Next Color | N |
 | Spotlight Tool | F |
 | Text Tool | T |
 | Move Tool | V |

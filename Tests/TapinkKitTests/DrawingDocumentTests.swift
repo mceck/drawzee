@@ -245,6 +245,71 @@ final class DrawingDocumentTests: XCTestCase {
         XCTAssertEqual(addedIDs, [stroke.id], "redo revives an object; it must not restart its auto-fade clock")
     }
 
+    // MARK: - updateText(id:transform:) (text tool re-editing)
+
+    private func sampleText(screen: ScreenID = 1) -> TextObject {
+        TextObject(screen: screen, origin: .zero, string: "hello", color: .red, fontSize: 24)
+    }
+
+    func testUpdateTextAppliesTransformInPlace() {
+        let document = DrawingDocument()
+        let text = sampleText()
+        document.add(.text(text))
+        document.updateText(id: text.id) { object in
+            object.string = "edited"
+            object.color = .blue
+            object.fontSize = 32
+            object.origin = CGPoint(x: 5, y: 5)
+        }
+        guard case .text(let updated)? = document.objects.first else {
+            return XCTFail("expected the text object to still be there")
+        }
+        XCTAssertEqual(updated.id, text.id, "updating must not mint a new object identity")
+        XCTAssertEqual(updated.string, "edited")
+        XCTAssertEqual(updated.color, .blue)
+        XCTAssertEqual(updated.fontSize, 32)
+        XCTAssertEqual(updated.origin, CGPoint(x: 5, y: 5))
+    }
+
+    func testUpdateTextKeepsPaintOrder() {
+        let document = DrawingDocument()
+        let first = sampleText(screen: 1)
+        let second = sampleStroke(screen: 2)
+        document.add(.text(first))
+        document.add(second)
+        document.updateText(id: first.id) { $0.string = "edited" }
+        XCTAssertEqual(document.objects.map(\.id), [first.id, second.id], "editing must not reorder objects")
+    }
+
+    func testUpdateTextOfUnknownIDIsNoOp() {
+        let document = DrawingDocument()
+        document.add(.text(sampleText()))
+        var changeCount = 0
+        document.onChange = { changeCount += 1 }
+        document.updateText(id: UUID()) { $0.string = "nope" }
+        XCTAssertEqual(changeCount, 0)
+    }
+
+    func testUpdateTextOnNonTextObjectIsNoOp() {
+        let document = DrawingDocument()
+        let stroke = sampleStroke()
+        document.add(stroke)
+        var changeCount = 0
+        document.onChange = { changeCount += 1 }
+        document.updateText(id: stroke.id) { $0.string = "nope" }
+        XCTAssertEqual(changeCount, 0)
+    }
+
+    func testUpdateTextDoesNotDisturbUndoRedo() {
+        let document = DrawingDocument()
+        let stroke = sampleStroke()
+        document.add(stroke)
+        document.undo()
+        document.updateText(id: UUID()) { $0.string = "nope" } // no-op target
+        document.redo()
+        XCTAssertEqual(document.objects.first?.id, stroke.id)
+    }
+
     func testObjectsForScreenPreservesInsertionOrder() {
         let document = DrawingDocument()
         document.add(sampleStroke(screen: 1))

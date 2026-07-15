@@ -1,10 +1,220 @@
 import SwiftUI
 import AppKit
 
+/// Reports this view's frame in its window's own (AppKit, bottom-left-origin) coordinate system
+/// on every layout pass — used instead of a SwiftUI `GeometryReader`'s `.global` frame so handing
+/// it to `NSWindow.convertToScreen` (see `ToolbarPanelController.screenFrame(forWindowLocalRect:)`)
+/// needs no manual coordinate-space flip.
+private struct WindowFrameReporter: NSViewRepresentable {
+    let onChange: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        nsView.onChange = onChange
+    }
+
+    final class TrackingView: NSView {
+        var onChange: ((CGRect) -> Void)?
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            // `layout()` isn't reliably invoked on a plain, constraint-less NSView — this
+            // fires on any change to the view's own frame, including ones SwiftUI applies here
+            // as a *result* of an ancestor's layout changing (collapsing the sidebar, a
+            // different capture button width, ...), since that still ends in AppKit setting
+            // this view's `frame` property.
+            postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(reportFrame), name: NSView.frameDidChangeNotification, object: self
+            )
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            reportFrame()
+        }
+
+        @objc private func reportFrame() {
+            onChange?(convert(bounds, to: nil))
+        }
+    }
+}
+
+/// Shows a floating label just outside the sidebar (left or right, whichever has room — see
+/// `TooltipPanelController`) after a short hover delay. Deliberately not `.help(_:)`: a real
+/// `NSHelpTag` tooltip always appears right at the cursor with no way to pin it to a fixed side
+/// of the whole toolbar, which is what was asked for here.
+private struct SidebarTooltip: ViewModifier {
+    let text: String
+    @ObservedObject var coordinator: DrawSessionCoordinator
+    @State private var frameInWindow: CGRect = .zero
+    @State private var showWorkItem: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        content
+            .background(WindowFrameReporter { frameInWindow = $0 })
+            .onHover { hovering in
+                showWorkItem?.cancel()
+                guard hovering else {
+                    coordinator.hideTooltip()
+                    return
+                }
+                let workItem = DispatchWorkItem { coordinator.showTooltip(text, forButtonAt: frameInWindow) }
+                showWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+            }
+    }
+}
+
+private extension View {
+    func sidebarTooltip(_ text: String, coordinator: DrawSessionCoordinator) -> some View {
+        modifier(SidebarTooltip(text: text, coordinator: coordinator))
+    }
+}
+
+/// AppKit-side mouse handling for a "click or open a menu" button, layered over the SwiftUI
+/// label as an `.overlay` so it is the view AppKit actually hit-tests for the button's clicks.
+/// All three interactions live here rather than in SwiftUI gestures: a short click fires
+/// `onClick`, holding past `longPressDuration` pops the menu, and a right-click pops the same
+/// menu immediately. The previous split — `onLongPressGesture` in SwiftUI plus a *background*
+/// `NSView` catching `rightMouseDown` — never worked: the interactive SwiftUI content above the
+/// background view claimed its events (so the right-click never arrived), and popping an
+/// `NSMenu` from inside a SwiftUI gesture callback runs outside AppKit's real mouse-tracking
+/// context, so the menu was dismissed by the still-pending mouse-up instead of opening. Real
+/// `mouseDown`/`rightMouseDown` overrides give `NSMenu` the genuine event context, and its
+/// native press-and-hold tracking (hold–drag–release or release-then-click) comes for free.
+private struct MenuButtonInteraction: NSViewRepresentable {
+    let longPressDuration: TimeInterval
+    let onClick: () -> Void
+    let makeMenu: () -> NSMenu
+
+    func makeNSView(context: Context) -> InteractionView {
+        let view = InteractionView()
+        apply(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: InteractionView, context: Context) {
+        apply(to: nsView)
+    }
+
+    private func apply(to view: InteractionView) {
+        view.longPressDuration = longPressDuration
+        view.onClick = onClick
+        view.makeMenu = makeMenu
+    }
+
+    final class InteractionView: NSView {
+        var longPressDuration: TimeInterval = 0.4
+        var onClick: (() -> Void)?
+        var makeMenu: (() -> NSMenu)?
+
+        private static let dragCancelDistance: CGFloat = 10
+
+        /// The toolbar panel is `isMovableByWindowBackground`; without this, pressing the
+        /// button would also start dragging the whole toolbar around.
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            let start = event.locationInWindow
+            let deadline = Date(timeIntervalSinceNow: longPressDuration)
+            // Classic AppKit click-and-hold: consume this press's own event stream until it
+            // resolves into a click (mouse up in time), a long press (deadline passes with the
+            // button still down), or a drag away from the button (cancel).
+            while true {
+                guard let next = window.nextEvent(
+                    matching: [.leftMouseUp, .leftMouseDragged],
+                    until: deadline,
+                    inMode: .eventTracking,
+                    dequeue: true
+                ) else {
+                    popUpMenu()
+                    return
+                }
+                if next.type == .leftMouseUp {
+                    onClick?()
+                    return
+                }
+                let point = next.locationInWindow
+                if hypot(point.x - start.x, point.y - start.y) > Self.dragCancelDistance {
+                    return
+                }
+            }
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            guard let menu = makeMenu?() else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+
+        /// Pops the menu beside the button rather than on top of it: mid-long-press the cursor
+        /// is still down inside the button, and a menu opening underneath it risks the release
+        /// landing on (and instantly triggering) whatever item happens to be there.
+        private func popUpMenu() {
+            guard let menu = makeMenu?() else { return }
+            menu.popUp(positioning: nil, at: NSPoint(x: bounds.maxX + 6, y: bounds.maxY), in: self)
+        }
+    }
+}
+
+/// Bridges a Swift closure to the target/action selector a plain `NSMenuItem` requires.
+/// `NSMenuItem.target` is `weak`, so each item's own `representedObject` (which the item *does*
+/// hold strongly) keeps its action alive for as long as the item exists — no separate owner needed.
+private final class MenuAction: NSObject {
+    private let handler: () -> Void
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    @objc func invoke() {
+        handler()
+    }
+}
+
+private extension NSEvent.ModifierFlags {
+    var swiftUIModifiers: EventModifiers {
+        var result: EventModifiers = []
+        if contains(.command) { result.insert(.command) }
+        if contains(.option) { result.insert(.option) }
+        if contains(.shift) { result.insert(.shift) }
+        if contains(.control) { result.insert(.control) }
+        return result
+    }
+}
+
+/// Applies a real `.keyboardShortcut` — which SwiftUI renders on its `Menu` item exactly like
+/// `showShapeMenu`'s hand-set `NSMenuItem.keyEquivalent` (right-aligned, muted color, for free) —
+/// only when the live binding reduces to a plain single character; a no-op otherwise, leaving the
+/// shortcut spelled out in the item's own label text as a fallback.
+private struct OptionalKeyboardShortcut: ViewModifier {
+    let binding: ShortcutBinding
+
+    func body(content: Content) -> some View {
+        if let character = binding.singleCharacterKeyEquivalent {
+            content.keyboardShortcut(KeyEquivalent(character), modifiers: binding.modifierFlags.swiftUIModifiers)
+        } else {
+            content
+        }
+    }
+}
+
 struct ToolbarView: View {
     @ObservedObject var coordinator: DrawSessionCoordinator
     @State private var showColorPicker = false
     @State private var showSizePicker = false
+
+    private static let longPressDuration: TimeInterval = 0.4
 
     var body: some View {
         VStack(spacing: 10) {
@@ -41,15 +251,18 @@ struct ToolbarView: View {
                         iconLabel(systemName: "snowflake", selected: coordinator.isBackgroundFrozen)
                     }
                     .buttonStyle(.plain)
+                    .sidebarTooltip(tip("Freeze Background", .freezeBackground), coordinator: coordinator)
                     Button {
                         coordinator.toggleAutofade()
                     } label: {
                         iconLabel(systemName: "timer", selected: coordinator.isAutofadeEnabled)
                     }
                     .buttonStyle(.plain)
+                    .sidebarTooltip(tip("Auto-Fade Drawings", .toggleAutofade), coordinator: coordinator)
                     actionButton(systemName: "trash.fill") {
                         coordinator.clearCanvas()
                     }
+                    .sidebarTooltip(tip("Clear Canvas", .clearCanvas), coordinator: coordinator)
                 }
                 .transition(.opacity)
             }
@@ -61,6 +274,7 @@ struct ToolbarView: View {
                     coordinator.disableDrawMode()
                 }
                 .transition(.opacity)
+                .sidebarTooltip(tip("Exit Draw Mode", .exitDrawMode), coordinator: coordinator)
             }
         }
         .padding(.vertical, 18)
@@ -97,6 +311,10 @@ struct ToolbarView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .sidebarTooltip(
+            tip(coordinator.isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar", .toggleSidebar),
+            coordinator: coordinator
+        )
     }
 
     private var colorSwatch: some View {
@@ -111,6 +329,7 @@ struct ToolbarView: View {
         .popover(isPresented: $showColorPicker, arrowEdge: .trailing) {
             ColorPickerPopover(coordinator: coordinator)
         }
+        .sidebarTooltip("Color (\(shortcutText(.nextColor)) cycles)", coordinator: coordinator)
     }
 
     // Mirrors the systemName used by each `toolButton`/`shapeButton` below, so
@@ -169,32 +388,54 @@ struct ToolbarView: View {
             }
             .padding()
         }
+        .sidebarTooltip(
+            isTextTool ? "Font Size (\u{2318}+Scroll)" : "Brush Size (\u{2318}+Scroll)",
+            coordinator: coordinator
+        )
     }
 
+    /// A short click re-selects the shape tool with whichever shape was last used (like every
+    /// other `toolButton`); a long press or a right-click instead brings up the shape picker. A
+    /// SwiftUI `Menu` always opens on left-click with no way to gate that on press duration or
+    /// button, so an AppKit overlay (`MenuButtonInteraction`) owns all of this button's mouse
+    /// handling and pops the hand-built `NSMenu` from `makeShapeMenu()`.
     private var shapeButton: some View {
-        // `Menu`'s own label rendering doesn't reliably show a background applied
-        // inside the label (the accent highlight silently didn't show up there) —
-        // applying it to the `Menu` itself instead, behind its native control,
-        // works around that and matches the other tool buttons.
-        Menu {
-            ForEach(ShapeKind.allCases, id: \.self) { shape in
-                Button(shape.displayName) {
-                    coordinator.setShape(shape)
-                }
+        Image(systemName: coordinator.toolState.selectedShape.symbolName)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(.white)
+            .frame(width: 32, height: 32)
+            .background(coordinator.toolState.selectedTool == .shape ? Color.accentColor : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(MenuButtonInteraction(
+                longPressDuration: Self.longPressDuration,
+                onClick: { coordinator.selectTool(.shape) },
+                makeMenu: makeShapeMenu
+            ))
+            .sidebarTooltip("Shapes - hold/right-click to choose", coordinator: coordinator)
+    }
+
+    private func makeShapeMenu() -> NSMenu {
+        let menu = NSMenu()
+        for shape in ShapeKind.allCases {
+            let binding = AppSettings.shared.binding(for: shape.shortcutAction)
+            let action = MenuAction { coordinator.setShape(shape) }
+            let item = NSMenuItem(title: shape.displayName, action: #selector(MenuAction.invoke), keyEquivalent: "")
+            // A real key equivalent gets AppKit's native right-aligned, muted-color rendering for
+            // free; only spell the shortcut out in the title when the live binding doesn't reduce
+            // to a plain single character (e.g. rebound to a named key like Tab or Esc).
+            if let character = binding.singleCharacterKeyEquivalent {
+                item.keyEquivalent = String(character)
+                item.keyEquivalentModifierMask = binding.modifierFlags
+            } else {
+                item.title = "\(shape.displayName) (\(binding.displayString))"
             }
-        } label: {
-            Image(systemName: coordinator.toolState.selectedShape.symbolName)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.white)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+            item.image = NSImage(systemSymbolName: shape.symbolName, accessibilityDescription: nil)
+            item.state = shape == coordinator.toolState.selectedShape ? .on : .off
+            item.target = action
+            item.representedObject = action
+            menu.addItem(item)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .frame(width: 32, height: 32)
-        .background(coordinator.toolState.selectedTool == .shape ? Color.accentColor : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .contentShape(Rectangle())
+        return menu
     }
 
     /// While nothing is recording: a dropdown covering all four capture actions (two screenshot
@@ -203,7 +444,7 @@ struct ToolbarView: View {
     /// tinted red so it reads as "recording" at a glance instead of the usual accent blue.
     @ViewBuilder
     private var captureButton: some View {
-        if coordinator.activeRecordingKind != nil {
+        if let activeRecordingKind = coordinator.activeRecordingKind {
             Button {
                 coordinator.stopRecording()
             } label: {
@@ -216,13 +457,25 @@ struct ToolbarView: View {
             .buttonStyle(.plain)
             .background(Color.red)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .sidebarTooltip(
+                tip("Stop Recording", activeRecordingKind == .region ? .regionRecording : .recordScreen),
+                coordinator: coordinator
+            )
         } else {
             Menu {
-                Button("Screenshot Screen") { coordinator.captureScreenshot(saveToDisk: false) }
-                Button("Screenshot Area") { coordinator.beginRegionScreenshotSelection() }
+                captureMenuItem("Screenshot Screen", systemImage: "camera.fill", action: .copyScreenshot) {
+                    coordinator.captureScreenshot(saveToDisk: false)
+                }
+                captureMenuItem("Screenshot Area", systemImage: "crop", action: .regionScreenshot) {
+                    coordinator.beginRegionScreenshotSelection()
+                }
                 Divider()
-                Button("Record Screen") { coordinator.toggleScreenRecording() }
-                Button("Record Area") { coordinator.toggleRegionRecording() }
+                captureMenuItem("Record Screen", systemImage: "record.circle", action: .recordScreen) {
+                    coordinator.toggleScreenRecording()
+                }
+                captureMenuItem("Record Area", systemImage: "rectangle.dashed", action: .regionRecording) {
+                    coordinator.toggleRegionRecording()
+                }
             } label: {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 15, weight: .medium))
@@ -236,7 +489,19 @@ struct ToolbarView: View {
             .background(coordinator.isSelectingRegion ? Color.accentColor : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .contentShape(Rectangle())
+            .sidebarTooltip("Capture", coordinator: coordinator)
         }
+    }
+
+    /// A capture-menu row: a real `.keyboardShortcut` (right-aligned, muted, native) when the
+    /// live binding allows one, else the shortcut spelled out inline in the label as a fallback —
+    /// see `OptionalKeyboardShortcut`.
+    private func captureMenuItem(_ label: String, systemImage: String, action: ShortcutAction, perform: @escaping () -> Void) -> some View {
+        let binding = AppSettings.shared.binding(for: action)
+        return Button(action: perform) {
+            Label(binding.singleCharacterKeyEquivalent != nil ? label : tip(label, action), systemImage: systemImage)
+        }
+        .modifier(OptionalKeyboardShortcut(binding: binding))
     }
 
     private func toolButton(_ tool: DrawingTool, systemName: String) -> some View {
@@ -246,6 +511,18 @@ struct ToolbarView: View {
             iconLabel(systemName: systemName, selected: coordinator.toolState.selectedTool == tool)
         }
         .buttonStyle(.plain)
+        .sidebarTooltip(tip(tool.displayName, tool.shortcutAction), coordinator: coordinator)
+    }
+
+    /// The live binding's display string (e.g. "⌘⇧A") for a rebindable action, so tooltips never
+    /// drift from whatever the user has actually bound in Settings.
+    private func shortcutText(_ action: ShortcutAction) -> String {
+        AppSettings.shared.binding(for: action).displayString
+    }
+
+    private func tip(_ label: String, _ action: ShortcutAction?) -> String {
+        guard let action else { return label }
+        return "\(label) (\(shortcutText(action)))"
     }
 
     private func actionButton(systemName: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
@@ -278,10 +555,7 @@ struct ToolbarView: View {
 private struct ColorPickerPopover: View {
     @ObservedObject var coordinator: DrawSessionCoordinator
 
-    private let presets: [NSColor] = [
-        .systemYellow, .systemRed, .systemOrange, .systemGreen,
-        .systemBlue, .systemPurple, .white, .black,
-    ]
+    private let presets: [NSColor] = ToolState.colorPalette
 
     var body: some View {
         VStack(spacing: 12) {

@@ -39,7 +39,6 @@ final class ShortcutActionTests: XCTestCase {
             .redo: "redo",
             .toolPen: "toolPen",
             .toolHighlighter: "toolHighlighter",
-            .toolShape: "toolShape",
             .toolSpotlight: "toolSpotlight",
             .toolText: "toolText",
             .toolMove: "toolMove",
@@ -52,6 +51,7 @@ final class ShortcutActionTests: XCTestCase {
             .shapeArrow: "shapeArrow",
             .toggleSidebar: "toggleSidebar",
             .hideSidebar: "hideSidebar",
+            .nextColor: "nextColor",
         ]
         XCTAssertEqual(expected.count, ShortcutAction.allCases.count, "a case was added or removed without updating this test")
         for (action, rawValue) in expected {

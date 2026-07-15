@@ -17,7 +17,6 @@ public enum ShortcutAction: String, Codable, CaseIterable {
     case redo
     case toolPen
     case toolHighlighter
-    case toolShape
     case toolSpotlight
     case toolText
     case toolMove
@@ -30,6 +29,7 @@ public enum ShortcutAction: String, Codable, CaseIterable {
     case shapeArrow
     case toggleSidebar
     case hideSidebar
+    case nextColor
 
     public var isGlobal: Bool {
         self == .activateDrawMode
@@ -50,7 +50,6 @@ public enum ShortcutAction: String, Codable, CaseIterable {
         case .redo: return "Redo"
         case .toolPen: return "Pen Tool"
         case .toolHighlighter: return "Highlighter Tool"
-        case .toolShape: return "Shape Tool"
         case .toolSpotlight: return "Spotlight Tool"
         case .toolText: return "Text Tool"
         case .toolMove: return "Move Tool"
@@ -63,6 +62,7 @@ public enum ShortcutAction: String, Codable, CaseIterable {
         case .shapeArrow: return "Arrow Shape"
         case .toggleSidebar: return "Toggle Sidebar"
         case .hideSidebar: return "Hide Sidebar"
+        case .nextColor: return "Next Color"
         }
     }
 }

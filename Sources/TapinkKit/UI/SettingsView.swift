@@ -36,6 +36,11 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Start draw mode with sidebar hidden", isOn: $model.startWithSidebarHidden)
+                Picker("Hold to temporarily switch to Move", selection: $model.temporaryMoveToolModifier) {
+                    ForEach(TemporaryMoveToolModifier.allCases, id: \.self) { modifier in
+                        Text(modifier.displayName).tag(modifier)
+                    }
+                }
             }
             Section("Screenshots & Recordings") {
                 HStack {
@@ -52,6 +57,16 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Show cursor in recordings", isOn: $model.recordCursorInVideos)
+                Picker("Recording codec", selection: $model.recordingCodec) {
+                    ForEach(RecordingCodec.allCases, id: \.self) { codec in
+                        Text(codec.displayName).tag(codec)
+                    }
+                }
+                Picker("Recording quality", selection: $model.recordingQuality) {
+                    ForEach(RecordingQuality.allCases, id: \.self) { quality in
+                        Text(quality.displayName).tag(quality)
+                    }
+                }
                 Stepper(value: $model.maxRecordingDurationMinutes, in: 1...180, step: 1) {
                     HStack {
                         Text("Stop recordings automatically after")
@@ -117,11 +132,20 @@ final class SettingsViewModel: ObservableObject {
     @Published var startWithSidebarHidden: Bool {
         didSet { AppSettings.shared.startDrawModeWithSidebarHidden = startWithSidebarHidden }
     }
+    @Published var temporaryMoveToolModifier: TemporaryMoveToolModifier {
+        didSet { AppSettings.shared.temporaryMoveToolModifier = temporaryMoveToolModifier }
+    }
     @Published var recordCursorInVideos: Bool {
         didSet { AppSettings.shared.recordCursorInVideos = recordCursorInVideos }
     }
     @Published var maxRecordingDurationMinutes: Double {
         didSet { AppSettings.shared.maxRecordingDurationMinutes = maxRecordingDurationMinutes }
+    }
+    @Published var recordingCodec: RecordingCodec {
+        didSet { AppSettings.shared.recordingCodec = recordingCodec }
+    }
+    @Published var recordingQuality: RecordingQuality {
+        didSet { AppSettings.shared.recordingQuality = recordingQuality }
     }
 
     init() {
@@ -131,8 +155,11 @@ final class SettingsViewModel: ObservableObject {
         regionScreenshotDestination = AppSettings.shared.regionScreenshotDestination
         autofadeDelay = AppSettings.shared.autofadeDelaySeconds
         startWithSidebarHidden = AppSettings.shared.startDrawModeWithSidebarHidden
+        temporaryMoveToolModifier = AppSettings.shared.temporaryMoveToolModifier
         recordCursorInVideos = AppSettings.shared.recordCursorInVideos
         maxRecordingDurationMinutes = AppSettings.shared.maxRecordingDurationMinutes
+        recordingCodec = AppSettings.shared.recordingCodec
+        recordingQuality = AppSettings.shared.recordingQuality
     }
 
     func chooseFolder() {

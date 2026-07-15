@@ -58,6 +58,19 @@ public final class DrawingDocument {
         if changed { onChange?() }
     }
 
+    /// Updates one text object's content/style/position in place — used when committing an edit
+    /// to an already-placed text object (`CanvasView.beginEditingExistingText`). Same undo
+    /// philosophy as `translate`: editing an existing object isn't a new "draw" action, so this
+    /// doesn't touch the undo/redo stacks or change the object's position in paint order.
+    /// No-ops if `id` doesn't refer to a text object (already removed, or a different kind).
+    public func updateText(id: UUID, transform: (inout TextObject) -> Void) {
+        guard let index = objects.firstIndex(where: { $0.id == id }),
+              case .text(var object) = objects[index] else { return }
+        transform(&object)
+        objects[index] = .text(object)
+        onChange?()
+    }
+
     /// Removes one specific object without touching the redo stack — used by
     /// the eraser tool and when an auto-fade erase completes. Neither is an
     /// undoable action: "undo" keeps meaning "take back my last drawing",

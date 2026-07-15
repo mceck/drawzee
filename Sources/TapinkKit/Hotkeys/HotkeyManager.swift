@@ -23,6 +23,11 @@ public final class HotkeyManager {
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var localMonitor: Any?
+    private var flagsMonitor: Any?
+    /// Mirrors whether `DrawSessionCoordinator.beginTemporaryMoveTool()` is currently in effect,
+    /// so `handleFlagsChanged` only calls begin/end on an actual transition rather than on every
+    /// `flagsChanged` event (which fires for unrelated modifiers too, e.g. Shift).
+    private var isTemporaryMoveActive = false
 
     public init(coordinator: DrawSessionCoordinator) {
         self.coordinator = coordinator
@@ -30,6 +35,10 @@ public final class HotkeyManager {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self, self.handleLocal(event) else { return event }
             return nil
+        }
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleFlagsChanged(event)
+            return event
         }
     }
 
@@ -41,6 +50,7 @@ public final class HotkeyManager {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
         }
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
     }
 
     /// Retries creating the activation event tap. Tap creation fails outright
@@ -148,12 +158,12 @@ public final class HotkeyManager {
             (.regionRecording, { coordinator.toggleRegionRecording() }),
             (.freezeBackground, { coordinator.toggleFreezeBackground() }),
             (.toggleAutofade, { coordinator.toggleAutofade() }),
+            (.nextColor, { coordinator.selectNextColor() }),
             (.redo, { coordinator.document.redo() }),
             (.undo, { coordinator.document.undo() }),
             (.clearCanvas, { coordinator.deleteSelected() }),
             (.toolPen, { coordinator.selectTool(.pen) }),
             (.toolHighlighter, { coordinator.selectTool(.highlighter) }),
-            (.toolShape, { coordinator.selectTool(.shape) }),
             (.shapeRectangle, { coordinator.setShape(.rectangle) }),
             (.shapeEllipse, { coordinator.setShape(.ellipse) }),
             (.shapeLine, { coordinator.setShape(.line) }),
@@ -164,10 +174,54 @@ public final class HotkeyManager {
             (.toolEraser, { coordinator.selectTool(.eraser) }),
         ]
 
-        for (action, handler) in actions where settings.binding(for: action).matches(event) {
+        for (action, handler) in actions where shortcutMatches(action, event: event, settings: settings) {
             handler()
             return true
         }
         return false
+    }
+
+    /// Same as `settings.binding(for:).matches(event)`, except `.clearCanvas` (Delete) also
+    /// matches while the "hold to temporarily switch to Move" gesture is active and the only
+    /// extra modifier present is the one driving that hold. Delete's default binding requires no
+    /// modifiers at all, so without this it could never fire while holding the modifier down —
+    /// and deleting the selection right after nudging it, without letting go first, is exactly
+    /// the point of the gesture.
+    private func shortcutMatches(_ action: ShortcutAction, event: NSEvent, settings: AppSettings) -> Bool {
+        let binding = settings.binding(for: action)
+        if binding.matches(event) { return true }
+        guard action == .clearCanvas, isTemporaryMoveActive, event.keyCode == binding.keyCode else { return false }
+        return event.modifierFlags.intersection(.deviceIndependentFlagsMask) == settings.temporaryMoveToolModifier.eventModifierFlag
+    }
+
+    /// Drives the "hold ⌘ (or ⌥) to temporarily switch to Move" gesture: `flagsChanged` (not
+    /// `keyDown`/`keyUp`, since modifier keys alone never generate those) fires on every press
+    /// or release of any modifier, so this recomputes whether the hold *should* be active right
+    /// now and only calls into the coordinator on an actual transition.
+    private func handleFlagsChanged(_ event: NSEvent) {
+        guard let coordinator else { return }
+        guard coordinator.isDrawModeActive else {
+            // Draw mode isn't active, so there's nothing to end — `DrawSessionCoordinator`
+            // already resets its own side of this on `enableDrawMode()`/`disableDrawMode()`.
+            // Just keep this flag in sync so the next session starts from a clean edge.
+            isTemporaryMoveActive = false
+            return
+        }
+        let shouldBeActive = !coordinator.isEditingText
+            && !coordinator.isSelectingRegion
+            && event.modifierFlags.contains(AppSettings.shared.temporaryMoveToolModifier.eventModifierFlag)
+        guard shouldBeActive != isTemporaryMoveActive else { return }
+        // Only *starting* the hold is guarded against an in-progress mouse drag — switching the
+        // tool out from under an in-progress pen/shape stroke would leave it half-drawn. Ending
+        // it always restores the previous tool immediately: skipping that when the mouse happens
+        // to be down could otherwise leave the tool stuck on Move until some unrelated later
+        // modifier change happens to re-evaluate it.
+        if shouldBeActive, NSEvent.pressedMouseButtons != 0 { return }
+        isTemporaryMoveActive = shouldBeActive
+        if shouldBeActive {
+            coordinator.beginTemporaryMoveTool()
+        } else {
+            coordinator.endTemporaryMoveTool()
+        }
     }
 }

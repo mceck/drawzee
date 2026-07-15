@@ -30,6 +30,17 @@ public struct ShortcutBinding: Codable, Equatable {
         return result
     }
 
+    /// A single lowercase character usable as a native `NSMenuItem`/SwiftUI `.keyboardShortcut`
+    /// key equivalent (which AppKit then renders right-aligned and in a muted color on its own —
+    /// no manual layout needed), or `nil` for named keys (Tab, Esc, ...) that have no clean
+    /// single-character form. Menus fall back to spelling the shortcut out in the item's title
+    /// when this is `nil`.
+    public var singleCharacterKeyEquivalent: Character? {
+        let name = ShortcutBinding.keyCodeToString(keyCode)
+        guard name.count == 1, let character = name.first, character.isLetter || character.isNumber else { return nil }
+        return Character(character.lowercased())
+    }
+
     private static let keyCodeNames: [UInt16: String] = [
         UInt16(kVK_Tab): "Tab",
         UInt16(kVK_Escape): "Esc",
@@ -72,7 +83,6 @@ extension ShortcutBinding {
         .redo: ShortcutBinding(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command, .shift]),
         .toolPen: ShortcutBinding(keyCode: UInt16(kVK_ANSI_P), modifiers: []),
         .toolHighlighter: ShortcutBinding(keyCode: UInt16(kVK_ANSI_H), modifiers: []),
-        .toolShape: ShortcutBinding(keyCode: UInt16(kVK_ANSI_S), modifiers: []),
         .toolSpotlight: ShortcutBinding(keyCode: UInt16(kVK_ANSI_F), modifiers: []),
         .toolText: ShortcutBinding(keyCode: UInt16(kVK_ANSI_T), modifiers: []),
         .toolMove: ShortcutBinding(keyCode: UInt16(kVK_ANSI_V), modifiers: []),
@@ -85,5 +95,6 @@ extension ShortcutBinding {
         .shapeArrow: ShortcutBinding(keyCode: UInt16(kVK_ANSI_4), modifiers: []),
         .toggleSidebar: ShortcutBinding(keyCode: UInt16(kVK_ANSI_W), modifiers: [.option]),
         .hideSidebar: ShortcutBinding(keyCode: UInt16(kVK_ANSI_W), modifiers: [.command]),
+        .nextColor: ShortcutBinding(keyCode: UInt16(kVK_ANSI_N), modifiers: []),
     ]
 }

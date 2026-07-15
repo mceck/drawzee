@@ -55,12 +55,17 @@ public final class OverlayWindowController: NSObject {
         canvas.onRegionSelected = { [weak coordinator, screenID] rect in
             coordinator?.completeRegionSelection(screenID: screenID, rectInPoints: rect)
         }
+        canvas.onLineWidthChange = { [weak coordinator] width in coordinator?.setLineWidth(width) }
 
         cancellable = coordinator.$toolState
             .sink { [weak canvas] state in
                 if state.selectedTool != .spotlight {
                     canvas?.clearSpotlight()
                 }
+                // Keeps an in-progress text edit's color/font size updating live as the user
+                // adjusts them from the toolbar (or ⌘-scroll) instead of only taking effect once
+                // committed — a no-op on every canvas but the one actually editing text.
+                canvas?.updateActiveTextAppearance(color: state.color, fontSize: state.textFontSize)
             }
     }
 
