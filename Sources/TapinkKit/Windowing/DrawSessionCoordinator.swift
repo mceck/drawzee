@@ -350,15 +350,11 @@ public final class DrawSessionCoordinator: ObservableObject {
 
     /// Applies to objects committed from now on (a stroke already in progress
     /// counts: its fade clock starts at mouse-up, which lands after this).
-    /// Turning it on also wipes whatever is already drawn: the mode means
-    /// "nothing sticks around", so pre-existing permanent drawings would
-    /// otherwise linger forever next to the self-erasing new ones.
+    /// Existing drawings remain on screen — only new strokes/shapes/text will
+    /// auto-fade after the configured delay.
     /// Toggling off leaves everything currently on screen permanent.
     public func toggleAutofade() {
         isAutofadeEnabled.toggle()
-        if isAutofadeEnabled {
-            document.clear()
-        }
         autofade.setEnabled(isAutofadeEnabled)
         showToast(isAutofadeEnabled ? "Auto-Fade On" : "Auto-Fade Off", systemImage: "timer")
     }

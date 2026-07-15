@@ -7,6 +7,7 @@ import Foundation
 public final class DrawingDocument {
     public private(set) var objects: [DrawingObject] = []
     private var redoStack: [DrawingObject] = []
+    private var clearedSnapshot: [DrawingObject]?
 
     /// Fired whenever the object list changes (add/undo/redo/clear/remove), so views can redraw.
     public var onChange: (() -> Void)?
@@ -18,12 +19,19 @@ public final class DrawingDocument {
 
     public func add(_ object: DrawingObject) {
         objects.append(object)
+        clearedSnapshot = nil
         redoStack.removeAll()
         onAdd?(object)
         onChange?()
     }
 
     public func undo() {
+        if objects.isEmpty, let snapshot = clearedSnapshot {
+            clearedSnapshot = nil
+            objects = snapshot
+            onChange?()
+            return
+        }
         guard let last = objects.popLast() else { return }
         redoStack.append(last)
         onChange?()
@@ -83,6 +91,7 @@ public final class DrawingDocument {
 
     public func clear() {
         guard !objects.isEmpty else { return }
+        clearedSnapshot = objects
         objects.removeAll()
         redoStack.removeAll()
         onChange?()
