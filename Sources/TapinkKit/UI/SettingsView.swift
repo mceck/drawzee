@@ -91,7 +91,7 @@ struct SettingsView: View {
                     Button("Copy") { model.copyToken() }
                     Button("Regenerate") { model.regenerateToken() }
                 }
-                Text("Lets a local process (e.g. an MCP server) control draw mode, drawing, and screenshots over HTTP on 127.0.0.1. Requests must include this token as a Bearer token.")
+                Text("Expose control draw mode, drawing, and screenshots over HTTP on 127.0.0.1. Requests must include this token as a Bearer token.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -10,19 +10,22 @@ struct PointDTO: Codable {
     var cgPoint: CGPoint { CGPoint(x: x, y: y) }
 }
 
+/// `color`/`width`/`fontSize` are optional on every request DTO below — omitted fields fall back
+/// to whatever's currently selected in TapInk's toolbar (`ToolState`), the same default a human
+/// drawing by hand would get. See `APIRouter`'s `resolvedColor`/`resolvedWidth`.
 struct StrokeRequestDTO: Codable {
     var display: ScreenID
     var points: [PointDTO]
-    var color: String
-    var width: Double
+    var color: String?
+    var width: Double?
 }
 
 struct ShapeRequestDTO: Codable {
     var display: ScreenID
     var start: PointDTO
     var end: PointDTO
-    var color: String
-    var width: Double
+    var color: String?
+    var width: Double?
     var fill: String?
 }
 
@@ -30,8 +33,8 @@ struct TextRequestDTO: Codable {
     var display: ScreenID
     var origin: PointDTO
     var string: String
-    var color: String
-    var fontSize: Double
+    var color: String?
+    var fontSize: Double?
 }
 
 struct DisplayInfoDTO: Codable {

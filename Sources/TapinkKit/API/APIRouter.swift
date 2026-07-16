@@ -84,10 +84,25 @@ final class APIRouter {
         }
     }
 
+    /// `nil` input (field omitted) resolves to the toolbar's current color; `nil` return means an
+    /// explicitly-provided hex string failed to parse, which the caller turns into a 400.
+    private func resolvedColor(_ hex: String?) -> NSColor? {
+        guard let hex else { return coordinator.toolState.color }
+        return NSColor(hex: hex)
+    }
+
+    private func resolvedWidth(_ width: Double?) -> CGFloat {
+        width.map { CGFloat($0) } ?? coordinator.toolState.lineWidth
+    }
+
+    private func resolvedFontSize(_ fontSize: Double?) -> CGFloat {
+        fontSize.map { CGFloat($0) } ?? coordinator.toolState.textFontSize
+    }
+
     private func handleStroke(_ request: HTTPRequest, isHighlighter: Bool) -> HTTPResponse {
         guard let dto = try? JSONDecoder().decode(StrokeRequestDTO.self, from: request.body),
               let screen = screen(forDisplayID: dto.display),
-              let color = NSColor(hex: dto.color) else {
+              let color = resolvedColor(dto.color) else {
             return .error("Invalid request body", status: 400)
         }
         let scale = screen.backingScaleFactor
@@ -96,7 +111,7 @@ final class APIRouter {
             APICoordinates.point(fromPixel: $0.cgPoint, screenHeightInPoints: heightInPoints, scale: scale)
         }
         ensureDrawModeActive()
-        let stroke = StrokeObject(screen: dto.display, points: points, color: color, width: CGFloat(dto.width), isHighlighter: isHighlighter)
+        let stroke = StrokeObject(screen: dto.display, points: points, color: color, width: resolvedWidth(dto.width), isHighlighter: isHighlighter)
         coordinator.document.add(.stroke(stroke))
         return .json(IDResponseDTO(id: stroke.id.uuidString))
     }
@@ -104,7 +119,7 @@ final class APIRouter {
     private func handleShape(_ request: HTTPRequest, kind: ShapeKind) -> HTTPResponse {
         guard let dto = try? JSONDecoder().decode(ShapeRequestDTO.self, from: request.body),
               let screen = screen(forDisplayID: dto.display),
-              let color = NSColor(hex: dto.color) else {
+              let color = resolvedColor(dto.color) else {
             return .error("Invalid request body", status: 400)
         }
         let scale = screen.backingScaleFactor
@@ -113,7 +128,7 @@ final class APIRouter {
         let end = APICoordinates.point(fromPixel: dto.end.cgPoint, screenHeightInPoints: heightInPoints, scale: scale)
         let fillColor = dto.fill.flatMap { NSColor(hex: $0) } ?? .clear
         ensureDrawModeActive()
-        let shape = ShapeObject(screen: dto.display, kind: kind, startPoint: start, endPoint: end, color: color, width: CGFloat(dto.width), fillColor: fillColor)
+        let shape = ShapeObject(screen: dto.display, kind: kind, startPoint: start, endPoint: end, color: color, width: resolvedWidth(dto.width), fillColor: fillColor)
         coordinator.document.add(.shape(shape))
         return .json(IDResponseDTO(id: shape.id.uuidString))
     }
@@ -121,12 +136,12 @@ final class APIRouter {
     private func handleText(_ request: HTTPRequest) -> HTTPResponse {
         guard let dto = try? JSONDecoder().decode(TextRequestDTO.self, from: request.body),
               let screen = screen(forDisplayID: dto.display),
-              let color = NSColor(hex: dto.color) else {
+              let color = resolvedColor(dto.color) else {
             return .error("Invalid request body", status: 400)
         }
         let origin = APICoordinates.point(fromPixel: dto.origin.cgPoint, screenHeightInPoints: screen.frame.height, scale: screen.backingScaleFactor)
         ensureDrawModeActive()
-        let text = TextObject(screen: dto.display, origin: origin, string: dto.string, color: color, fontSize: CGFloat(dto.fontSize))
+        let text = TextObject(screen: dto.display, origin: origin, string: dto.string, color: color, fontSize: resolvedFontSize(dto.fontSize))
         coordinator.document.add(.text(text))
         return .json(IDResponseDTO(id: text.id.uuidString))
     }
